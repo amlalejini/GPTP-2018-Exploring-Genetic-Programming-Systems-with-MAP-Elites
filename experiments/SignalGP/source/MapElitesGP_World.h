@@ -29,14 +29,19 @@
 #include "MapElitesGP_Org.h"
 #include "MapElitesGP_World.h"
 
+#include "PhenotypeCache.h"
+
 class MapElitesGPWorld : public emp::World<MapElitesGPOrg> {
 public:
   enum class WORLD_MODE { EA=0, MAPE=1 };
   enum class PROBLEM_TYPE { CHG_ENV=0, TESTCASES=1 };
   enum class POP_INIT_METHOD { RANDOM=0, ANCESTOR=1 };
   enum class CHGENV_TAG_GEN_METHOD { RANDOM=0, LOAD=1 }; 
+  enum class ENV_CHG_METHOD { PROB=0, CYCLE=1 };
+  struct OrgPhenotype;
 
   using org_t = MapElitesGPOrg; 
+  using phenotype_t = OrgPhenotype;
   using hardware_t = typename org_t::hardware_t;
   using program_t = typename org_t::program_t;
   using genome_t = typename org_t::genome_t;
@@ -44,6 +49,25 @@ public:
   using event_lib_t = typename org_t::event_lib_t;
   using tag_t = typename hardware_t::affinity_t;
   using trait_id_t = typename org_t::HW_TRAIT_ID;
+
+
+  struct OrgPhenotype {
+    // Generic
+    double score;
+
+    // For changing environment problem
+    double env_match_score;
+
+    // For logic 9 problem
+    // TODO
+    // For testcases problem
+    // TODO
+
+    void Reset() {
+      score = 0;
+      env_match_score = 0;
+    }
+  };
   
 protected:
   // Localized configurable parameters
@@ -66,6 +90,9 @@ protected:
   size_t ENV_STATE_CNT;
   bool ENV_DISTRACTION_SIGS;
   size_t ENV_DISTRACTION_SIG_CNT;
+  size_t ENV_CHG_METHOD;
+  double ENV_CHG_PROB;
+  size_t ENV_CHG_RATE;
   // == Program constraints group ==
   size_t PROG_MIN_FUNC_CNT;
   size_t PROG_MAX_FUNC_CNT;
@@ -97,6 +124,10 @@ protected:
 
   emp::Ptr<hardware_t> eval_hw;
 
+  PhenotypeCache<OrgPhenotype> phen_cache;
+
+  size_t eval_time;
+
   // == Problem-specific world info ==
     /// World info relevant to changing environment problem. 
   struct ChgEnvProblemInfo {
@@ -104,12 +135,22 @@ protected:
       emp::vector<tag_t> distraction_sig_tags;  ///< Tags associated with distraction signals.
       emp::vector<size_t> env_shuffler;         ///< Used for keeping track of shuffled environment cycling.
       size_t env_shuffle_id;
+      size_t env_state;
+      
+      void ResetEnv(emp::Random & rnd) { 
+        emp::Shuffle(rnd, env_shuffler);
+        env_shuffle_id=0;
+        env_state=(size_t)-1; 
+      }
   } chgenv_info;
 
   // Run signals
   emp::Signal<void(void)> do_evaluation_sig;
   emp::Signal<void(void)> do_selection_sig;
   emp::Signal<void(void)> do_world_update_sig;
+
+  // TODO: when caching phenotypes, make cache max_env size + 1; use last position for MAP-elites eval
+  //  - Use GetSize() for max capacity
 
   // Data-tracking signals
   emp::Signal<void(size_t)> do_pop_snapshot_sig;
@@ -160,7 +201,7 @@ protected:
 
   /// Used to poke the world as I develop it. 
   void Test() {
-
+    // TODO: run environment for a bit, check changing
   }
 
 public:
@@ -199,6 +240,7 @@ void MapElitesGPWorld::Setup(MapElitesGPConfig & config) {
   //    - Dominant file
   // - Setup selection
   //   - MAPE vs. EA
+  //      - Setup phen cache size
   /*
   For map-eliltes:  --> Need branch w/these signals in SignalGP- 
   eval_hw->OnBeforeFuncCall([this](hardware_t & hw, size_t fID) {
@@ -244,6 +286,9 @@ void MapElitesGPWorld::Init_Configs(MapElitesGPConfig & config) {
   ENV_STATE_CNT = config.ENV_STATE_CNT();
   ENV_DISTRACTION_SIGS = config.ENV_DISTRACTION_SIGS();
   ENV_DISTRACTION_SIG_CNT = config.ENV_DISTRACTION_SIG_CNT();
+  ENV_CHG_METHOD = config.ENV_CHG_METHOD();
+  ENV_CHG_PROB = config.ENV_CHG_PROB();
+  ENV_CHG_RATE = config.ENV_CHG_RATE();
 
   PROG_MIN_FUNC_CNT = config.PROG_MIN_FUNC_CNT();
   PROG_MAX_FUNC_CNT = config.PROG_MAX_FUNC_CNT();
@@ -271,6 +316,11 @@ void MapElitesGPWorld::Init_Configs(MapElitesGPConfig & config) {
   // Verify any config constraints
   if (EVAL_TRIAL_CNT < 1) {
     std::cout << "Cannot run experiment with EVAL_TRIAL_CNT < 1. Exiting..." << std::endl;
+    exit(-1);
+  }
+
+  if (ENV_STATE_CNT == (size_t)-1) {
+    std::cout << "ENV_STATE_CNT exceeds maximum allowed! Exiting..." << std::endl;
     exit(-1);
   }
 }
@@ -395,10 +445,68 @@ void MapElitesGPWorld::SetupProblem_ChgEnv() {
     std::cout << std::endl;
   }
   
+  // Populate the environment shuffler (used when changing the environment).
+  for (size_t i = 0; i < chgenv_info.env_state_tags.size(); ++i) chgenv_info.env_shuffler.emplace_back(i);
+  chgenv_info.env_shuffle_id = 0;
 
-// env_shuffler
-// env_shuffle_id
-// chgenv_info
+  // Setup env advance signal action.
+  // - Setup environment state changing
+  switch (ENV_CHG_METHOD) {
+    case (size_t)ENV_CHG_METHOD::PROB: {
+      do_env_advance_sig.AddAction([this]() {
+        ChgEnvProblemInfo & env = chgenv_info;
+        if (env.env_state == (size_t)-1 || random_ptr->P(ENV_CHG_PROB)) {
+          // Trigger change!
+          // What state should we switch to?
+          env.env_state = env.env_shuffler[env.env_shuffle_id]; 
+          env.env_shuffle_id += 1;
+          // If shuffle id exceeds env states, reset to 0 and shuffle!
+          if (env.env_shuffle_id >= ENV_STATE_CNT) {
+            env.env_shuffle_id = 0;
+            emp::Shuffle(*random_ptr, env.env_shuffler);
+          }
+          // 2) Trigger environment state event.
+          eval_hw->TriggerEvent("EnvSignal", env.env_state_tags[env.env_state]);
+        }
+      });
+      break;
+    }
+    case (size_t)ENV_CHG_METHOD::CYCLE: {
+      do_env_advance_sig.AddAction([this]() {
+        ChgEnvProblemInfo & env = chgenv_info;
+        if (env.env_state == (size_t)-1 || ((eval_time % ENV_CHG_RATE) == 0)) {
+          // Trigger change!
+          // What state should we switch to?
+          env.env_state = env.env_shuffler[env.env_shuffle_id]; 
+          env.env_shuffle_id += 1;
+          // If shuffle id exceeds env states, reset to 0 and shuffle!
+          if (env.env_shuffle_id >= ENV_STATE_CNT) {
+            env.env_shuffle_id = 0;
+            emp::Shuffle(*random_ptr, env.env_shuffler);
+          }
+          // 2) Trigger environment state event.
+          eval_hw->TriggerEvent("EnvSignal", env.env_state_tags[env.env_state]);
+        }
+      });
+      break;
+    }
+    default: {
+      std::cout << "Unrecognized ENV_CHG_METHOD (" << ENV_CHG_METHOD << "). Exiting..." << std::endl;
+      exit(-1);
+    }
+  }
+
+  // - Setup distraction signals
+  if (ENV_DISTRACTION_SIGS) {
+    do_env_advance_sig.AddAction([this]() {
+      if (random_ptr->P(ENV_DISTRACTION_SIG_CNT)) {
+        const size_t id = random_ptr->GetUInt(chgenv_info.distraction_sig_tags.size());
+        eval_hw->TriggerEvent("EnvSignal", chgenv_info.distraction_sig_tags[id]);
+      }
+    });
+  }
+
+  // TODO: fitness/phenotype updates
 }
 
 void MapElitesGPWorld::SetupProblem_Testcases() {
