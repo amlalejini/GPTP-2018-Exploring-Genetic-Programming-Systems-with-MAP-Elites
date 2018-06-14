@@ -50,6 +50,7 @@ public:
   using tag_t = typename hardware_t::affinity_t;
   using trait_id_t = typename org_t::HW_TRAIT_ID;
 
+  using mut_fun_t = std::function<size_t(org_t &, emp::Random &)>;
   using score_fun_t = std::function<double(org_t &, phenotype_t &)>;
 
   struct OrgPhenotype {
@@ -123,6 +124,7 @@ protected:
   size_t POP_SNAPSHOT_INTERVAL;
 
   emp::SignalGPMutator<org_t::TAG_WIDTH> mutator;
+  emp::vector<mut_fun_t> mut_funs;
 
   inst_lib_t inst_lib;
   event_lib_t event_lib;
@@ -354,8 +356,16 @@ void MapElitesGPWorld::Init_Mutator() {
   mutator.FUNC_DEL__PER_FUNC(FUNC_DEL__PER_FUNC);
   mutator.TAG_BIT_FLIP__PER_BIT(TAG_BIT_FLIP__PER_BIT);
   // Hook up mutator to world's MutateFun
+  mut_funs.push_back([this](org_t & org, emp::Random & r) {
+                        return mutator.ApplyMutations(org.GetProgram(), r);
+                      });
+
   SetMutFun([this](org_t & org, emp::Random & r) {
-    return mutator.ApplyMutations(org.GetProgram(), r);
+    size_t mut_cnt = 0; 
+    for (size_t f = 0; f < mut_funs.size(); ++f) {
+      mut_cnt += mut_funs[f](org, r);
+    }
+    return mut_cnt;
   });
   // TODO: setup mutation set (vector of mutation functions) that we can add mutate functions to
 
@@ -538,6 +548,10 @@ void MapElitesGPWorld::SetupProblem_ChgEnv() {
       }
     });
   }
+
+  calc_score = [](org_t & org, phenotype_t & phen) {
+    return phen.env_match_score;
+  };
 
   // TODO: fitness/phenotype updates
 }
