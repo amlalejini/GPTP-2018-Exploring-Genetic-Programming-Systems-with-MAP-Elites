@@ -35,6 +35,11 @@ EMP_BUILD_CONFIG( MapElitesGPConfig,
   VALUE(FUNC_DEL__PER_FUNC, double, 0.05, "Per-function rate to apply function deletions."),
   VALUE(TAG_BIT_FLIP__PER_BIT, double, 0.005, "Per-bit rate to apply tag bit flips. "),
 
+  GROUP(HARDWARE, "Settings for SignalGP hardware"),
+  VALUE(HW_MAX_THREAD_CNT, size_t, 8, "What is the maximum number of threads that can be active at any one time on the SignalGP hardware?"),
+  VALUE(HW_MAX_CALL_DEPTH, size_t, 128, "What is the maximum call depth for SignalGP hardware?"),
+  VALUE(HW_MIN_TAG_SIMILARITY_THRESH, double, 0.0, "What is the minimum required similarity threshold for tags to successfully match when performing tag-based referencing?"),
+
 )
 
 #endif

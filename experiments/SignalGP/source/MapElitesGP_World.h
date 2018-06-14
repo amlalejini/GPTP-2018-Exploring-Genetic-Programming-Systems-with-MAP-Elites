@@ -71,6 +71,10 @@ protected:
   double FUNC_DUP__PER_FUNC;
   double FUNC_DEL__PER_FUNC;
   double TAG_BIT_FLIP__PER_BIT;
+  // == Hardware group ==
+  size_t HW_MAX_THREAD_CNT;
+  size_t HW_MAX_CALL_DEPTH;
+  double HW_MIN_TAG_SIMILARITY_THRESH;
 
   emp::SignalGPMutator<org_t::TAG_WIDTH> mutator;
 
@@ -108,6 +112,11 @@ protected:
   void SetupProblem_Testcases();
 
 public:
+  MapElitesGPWorld() : emp::World<org_t>() { ; }
+  MapElitesGPWorld(emp::Random & rnd) : emp::World<org_t>(rnd) { ; }
+  ~MapElitesGPWorld() {
+    eval_hw.Delete(); // Clean up evaluation hardware. 
+  }
 
   // === Configuration/setup functions ===
   /// Configure the experiment
@@ -167,6 +176,10 @@ void MapElitesGPWorld::Init_Configs(MapElitesGPConfig & config) {
   FUNC_DUP__PER_FUNC = config.FUNC_DUP__PER_FUNC();
   FUNC_DEL__PER_FUNC = config.FUNC_DEL__PER_FUNC();
   TAG_BIT_FLIP__PER_BIT = config.TAG_BIT_FLIP__PER_BIT();
+
+  HW_MAX_THREAD_CNT = config.HW_MAX_THREAD_CNT();
+  HW_MAX_CALL_DEPTH = config.HW_MAX_CALL_DEPTH();
+  HW_MIN_TAG_SIMILARITY_THRESH = config.HW_MIN_TAG_SIMILARITY_THRESH();
 }
 
 /// Initialize world mutator.
@@ -226,8 +239,12 @@ void MapElitesGPWorld::Init_Hardware() {
   inst_lib.AddInst("Nop", hardware_t::Inst_Nop, 0, "No operation.");
   inst_lib.AddInst("Fork", hardware_t::Inst_Fork, 0, "Fork a new thread. Local memory contents of callee are loaded into forked thread's input memory.");
   inst_lib.AddInst("Terminate", hardware_t::Inst_Terminate, 0, "Kill current thread.");
-  
+  // Configure the evaluation hardware.
   eval_hw = emp::NewPtr<hardware_t>(&inst_lib, &event_lib, random_ptr);
+  eval_hw->SetMinBindThresh(HW_MIN_TAG_SIMILARITY_THRESH);
+  eval_hw->SetMaxCores(HW_MAX_THREAD_CNT);
+  eval_hw->SetMaxCallDepth(HW_MAX_CALL_DEPTH);
+
 }
 
 /// Initialize selected problem. 
