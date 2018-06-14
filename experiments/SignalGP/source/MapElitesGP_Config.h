@@ -12,9 +12,20 @@ EMP_BUILD_CONFIG( MapElitesGPConfig,
   VALUE(POP_INIT_METHOD, size_t, 0, "How should we initialize the population? \n0: Randomly, \n1: From a common ancestor"),
   VALUE(ANCESTOR_FPATH, std::string, "ancestor.gp", "Ancestor program file"),
 
+  GROUP(EVALUATION, "Settings related to evaluating SignalGP programs."),
+  VALUE(EVAL_TRIAL_CNT, size_t, 3, "How many independent trials should we evaluate each program for when calculating fitness?"),
+  VALUE(EVAL_TRIAL_AGG_METHOD, size_t, 0, "What method should we use to aggregate scores (to determine actual fitness) across fitness evaluation trials? \n0: Fitness = Min trial score \n1: Fitness = Max trial score \n2: Fitness = Avg trial score"),
+
   GROUP(PROBLEM, "Settings related to the problem we're evolving programs to solve."),
   VALUE(PROBLEM_TYPE, size_t, 0, "What problem are we solving? \n0: Changing environment problem \n1: Testcase problem (requires TESTCASES_FPATH setting)"),
   VALUE(TESTCASES_FPATH, std::string, "testcases-squares.csv", "Where is the file containing testcases for the problem we're solving?"),
+
+  GROUP(CHG_ENV_PROBLEM, "Settings specific to the changing environment problem"),
+  VALUE(ENV_TAG_GEN_METHOD, size_t, 0, "How should we generate environment tags (true and distraction)? \n0: Randomly\n1: Load from file (ENV_TAG_FPATH)"),
+  VALUE(ENV_TAG_FPATH, std::string, "env_tags.csv", "Where should we save/load environment tags to/from?"),
+  VALUE(ENV_STATE_CNT, size_t, 8, "How many environment states are there?"),
+  VALUE(ENV_DISTRACTION_SIGS, bool, false, "Does the environment emit distraction signals?"),
+  VALUE(ENV_DISTRACTION_SIG_CNT, size_t, 8, "How many environment distraction signals are there?"),
 
   GROUP(PROGRAM_CONSTRAINTS, "SignalGP program constraits that mutation operators/initialization will respect."),
   VALUE(PROG_MIN_FUNC_CNT, size_t, 1, "Minimum number of functions mutations are allowed to reduce a SignalGP program to."),
@@ -35,11 +46,15 @@ EMP_BUILD_CONFIG( MapElitesGPConfig,
   VALUE(FUNC_DEL__PER_FUNC, double, 0.05, "Per-function rate to apply function deletions."),
   VALUE(TAG_BIT_FLIP__PER_BIT, double, 0.005, "Per-bit rate to apply tag bit flips. "),
 
+  // VALUE()
+
   GROUP(HARDWARE, "Settings for SignalGP hardware"),
   VALUE(HW_MAX_THREAD_CNT, size_t, 8, "What is the maximum number of threads that can be active at any one time on the SignalGP hardware?"),
   VALUE(HW_MAX_CALL_DEPTH, size_t, 128, "What is the maximum call depth for SignalGP hardware?"),
   VALUE(HW_MIN_TAG_SIMILARITY_THRESH, double, 0.0, "What is the minimum required similarity threshold for tags to successfully match when performing tag-based referencing?"),
 
+  GROUP(DATA_TRACKING, "Settings relevant to experiment data-tracking."),
+  VALUE(POP_SNAPSHOT_INTERVAL, size_t, 1000, "How often should we take a population snapshot?"),
 )
 
 #endif

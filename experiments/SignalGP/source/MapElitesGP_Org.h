@@ -3,8 +3,14 @@
 
 #include "hardware/EventDrivenGP.h"
 
+/// Struct describing phenotypic characteristics of MapElitesGPOrg. 
+struct MapElitesOrgPhenotype {
+
+};
+
 class MapElitesGPOrg {
 public:
+  struct Genome;
   // Useful aliases
   static constexpr size_t TAG_WIDTH = 16;
   using hardware_t = emp::EventDrivenGP_AW<TAG_WIDTH>;
@@ -14,19 +20,43 @@ public:
   using inst_t = typename hardware_t::inst_t;
   using hw_state_t = typename hardware_t::State;
 
+  using genome_t = Genome;
+
+  /// Hardware trait indexes.                               
+  ///   - ORG_STATE - Used to track organism state for changing environment problem.
+  ///   - PROBLEM_OUTPUT - used to track organism's output to a problem.                              ///
+  enum HW_TRAIT_ID { PROBLEM_OUTPUT=0, ORG_STATE=1 }; 
+
+  /// Information about organism genome
+  /// (e.g. program stats, stuff that doesn't change in context of environment)
+  struct GenomeInfo {
+    bool calculated; ///< Have we already calculated this information for this organism? 
+  };
+
+  struct Genome {
+    program_t program;
+    double tag_sim_thresh;
+
+    Genome(const program_t & _p, double _s=0) : program(_p), tag_sim_thresh(_s) { ; }
+    Genome(Genome && in)=default;
+    Genome(const Genome & in)=default;
+  };
+
 protected:
   size_t pos; ///< Position in world.
-  program_t program;
+  genome_t genome;
 
 public:
-  MapElitesGPOrg(const program_t & _p) : pos(0), program(_p) { ; }
+  // TODO: reset genome info on birth!
+  MapElitesGPOrg(const genome_t & _g) : pos(0), genome(_g) { ; }
   MapElitesGPOrg(const MapElitesGPOrg &) = default;
   MapElitesGPOrg(MapElitesGPOrg &&) = default;
 
   size_t GetPos() const { return pos; }
   void SetPos(size_t id) { pos = id; }
 
-  program_t & GetGenome() { return program; }
+  genome_t & GetGenome() { return genome; }
+  program_t & GetProgram() { return genome.program; }
 
 };
 

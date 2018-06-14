@@ -31,16 +31,19 @@
 
 class MapElitesGPWorld : public emp::World<MapElitesGPOrg> {
 public:
-  enum WORLD_MODE { EA=0, MAPE=1 };
-  enum PROBLEM_TYPE { CHG_ENV=0, TESTCASES=1 };
-  enum POP_INIT_METHOD { RANDOM=0, ANCESTOR=1 };
+  enum class WORLD_MODE { EA=0, MAPE=1 };
+  enum class PROBLEM_TYPE { CHG_ENV=0, TESTCASES=1 };
+  enum class POP_INIT_METHOD { RANDOM=0, ANCESTOR=1 };
+  enum class CHGENV_TAG_GEN_METHOD { RANDOM=0, LOAD=1 }; 
 
   using org_t = MapElitesGPOrg; 
   using hardware_t = typename org_t::hardware_t;
   using program_t = typename org_t::program_t;
+  using genome_t = typename org_t::genome_t;
   using inst_lib_t = typename org_t::inst_lib_t;
   using event_lib_t = typename org_t::event_lib_t;
-  // using genome_t = typename 
+  using tag_t = typename hardware_t::affinity_t;
+  using trait_id_t = typename org_t::HW_TRAIT_ID;
   
 protected:
   // Localized configurable parameters
@@ -51,9 +54,18 @@ protected:
   size_t GENERATIONS;
   size_t POP_INIT_METHOD;
   std::string ANCESTOR_FPATH;
-  // == Problem Group ==
+  // == Evaluation group ==
+  size_t EVAL_TRIAL_CNT;
+  size_t EVAL_TRIAL_AGG_METHOD;
+  // == Problem group ==
   size_t PROBLEM_TYPE;
   std::string TESTCASES_FPATH;
+  // == Changing environment group ==
+  size_t ENV_TAG_GEN_METHOD;
+  std::string ENV_TAG_FPATH;
+  size_t ENV_STATE_CNT;
+  bool ENV_DISTRACTION_SIGS;
+  size_t ENV_DISTRACTION_SIG_CNT;
   // == Program constraints group ==
   size_t PROG_MIN_FUNC_CNT;
   size_t PROG_MAX_FUNC_CNT;
@@ -75,6 +87,8 @@ protected:
   size_t HW_MAX_THREAD_CNT;
   size_t HW_MAX_CALL_DEPTH;
   double HW_MIN_TAG_SIMILARITY_THRESH;
+  // == Data tracking group ==
+  size_t POP_SNAPSHOT_INTERVAL;
 
   emp::SignalGPMutator<org_t::TAG_WIDTH> mutator;
 
@@ -82,6 +96,15 @@ protected:
   event_lib_t event_lib;
 
   emp::Ptr<hardware_t> eval_hw;
+
+  // == Problem-specific world info ==
+    /// World info relevant to changing environment problem. 
+  struct ChgEnvProblemInfo {
+      emp::vector<tag_t> env_state_tags;        ///< Tags associated with each environment state.
+      emp::vector<tag_t> distraction_sig_tags;  ///< Tags associated with distraction signals.
+      emp::vector<size_t> env_shuffler;         ///< Used for keeping track of shuffled environment cycling.
+      size_t env_shuffle_id;
+  } chgenv_info;
 
   // Run signals
   emp::Signal<void(void)> do_evaluation_sig;
@@ -111,6 +134,35 @@ protected:
   void SetupProblem_ChgEnv();
   void SetupProblem_Testcases();
 
+  // === Changing environment utility functions
+  void SaveChgEnvTags();
+  void LoadChgEnvTags();
+
+  // === Eval hardware utility functions ===
+  void ResetEvalHW() {
+    eval_hw->ResetHardware();
+    // TODO: add signal for onreset hardware
+    eval_hw->SetTrait(trait_id_t::PROBLEM_OUTPUT, -1);
+    eval_hw->SetTrait(trait_id_t::ORG_STATE, -1);
+  }
+
+  // === Evaluation functions ===
+  /// Evaluate given agent.
+  void Evaluate(org_t & org) {
+    begin_org_eval_sig.Trigger(org);  //? Can I keep trial ID local? 
+    for (size_t trial_id = 0; trial_id < EVAL_TRIAL_CNT; ++trial_id) {
+      begin_org_trial_sig.Trigger(org);
+      do_org_trial_sig.Trigger(org);
+      end_org_trial_sig.Trigger(org);
+    }
+    end_org_eval_sig.Trigger(org);
+  }
+
+  /// Used to poke the world as I develop it. 
+  void Test() {
+
+  }
+
 public:
   MapElitesGPWorld() : emp::World<org_t>() { ; }
   MapElitesGPWorld(emp::Random & rnd) : emp::World<org_t>(rnd) { ; }
@@ -137,16 +189,40 @@ void MapElitesGPWorld::Setup(MapElitesGPConfig & config) {
   Reset();              // Reset the world
   SetCache();           // We'll be caching fitness scores
   Init_Configs(config); // Initialize configs
-  Init_Mutator(); 
-  Init_Hardware();
-  Init_Problem();       // Initialize problem
-  
-  // - SetMutateBeforeBirth
-  // - Setup data tracking
+  Init_Mutator();       // Configure SignalGPMutator, mutation function.
+  Init_Hardware();      // Configure SignalGP hardware. 
+  Init_Problem();       // Configure problem.
   // - Setup problem
+  // - Setup data tracking (but only in native mode)
+  //    - Pop snapshot
+  //    - Fitness file
+  //    - Dominant file
   // - Setup selection
   //   - MAPE vs. EA
+  /*
+  For map-eliltes:  --> Need branch w/these signals in SignalGP- 
+  eval_hw->OnBeforeFuncCall([this](hardware_t & hw, size_t fID) {
+    functions_used.emplace(fID);
+  });
+  eval_hw->OnBeforeCoreSpawn([this](hardware_t & hw, size_t fID) {
+    functions_used.emplace(fID);
+  });
+  */
   // - Init population
+
+  // Configure run signals. 
+  do_world_update_sig.AddAction([this]() {
+    if (update % POP_SNAPSHOT_INTERVAL == 0) do_pop_snapshot_sig.Trigger(update);
+    Update(); 
+  });
+
+  // Generic evaluation signal actions. 
+  // - At beginning of agent evaluation. 
+  begin_org_eval_sig.AddAction([this](org_t & org) {
+    eval_hw->SetProgram(org.GetProgram());
+  });
+
+  Test();
 }
 
 void MapElitesGPWorld::Init_Configs(MapElitesGPConfig & config) {
@@ -157,8 +233,17 @@ void MapElitesGPWorld::Init_Configs(MapElitesGPConfig & config) {
   POP_INIT_METHOD = config.POP_INIT_METHOD();
   ANCESTOR_FPATH = config.ANCESTOR_FPATH();
 
+  EVAL_TRIAL_CNT = config.EVAL_TRIAL_CNT();
+  EVAL_TRIAL_AGG_METHOD = config.EVAL_TRIAL_AGG_METHOD();
+
   PROBLEM_TYPE = config.PROBLEM_TYPE();
   TESTCASES_FPATH = config.TESTCASES_FPATH();
+
+  ENV_TAG_GEN_METHOD = config.ENV_TAG_GEN_METHOD();
+  ENV_TAG_FPATH = config.ENV_TAG_FPATH();
+  ENV_STATE_CNT = config.ENV_STATE_CNT();
+  ENV_DISTRACTION_SIGS = config.ENV_DISTRACTION_SIGS();
+  ENV_DISTRACTION_SIG_CNT = config.ENV_DISTRACTION_SIG_CNT();
 
   PROG_MIN_FUNC_CNT = config.PROG_MIN_FUNC_CNT();
   PROG_MAX_FUNC_CNT = config.PROG_MAX_FUNC_CNT();
@@ -180,6 +265,14 @@ void MapElitesGPWorld::Init_Configs(MapElitesGPConfig & config) {
   HW_MAX_THREAD_CNT = config.HW_MAX_THREAD_CNT();
   HW_MAX_CALL_DEPTH = config.HW_MAX_CALL_DEPTH();
   HW_MIN_TAG_SIMILARITY_THRESH = config.HW_MIN_TAG_SIMILARITY_THRESH();
+
+  POP_SNAPSHOT_INTERVAL = config.POP_SNAPSHOT_INTERVAL();
+
+  // Verify any config constraints
+  if (EVAL_TRIAL_CNT < 1) {
+    std::cout << "Cannot run experiment with EVAL_TRIAL_CNT < 1. Exiting..." << std::endl;
+    exit(-1);
+  }
 }
 
 /// Initialize world mutator.
@@ -204,8 +297,11 @@ void MapElitesGPWorld::Init_Mutator() {
   mutator.TAG_BIT_FLIP__PER_BIT(TAG_BIT_FLIP__PER_BIT);
   // Hook up mutator to world's MutateFun
   SetMutFun([this](org_t & org, emp::Random & r) {
-    return mutator.ApplyMutations(org.GetGenome(), r);
+    return mutator.ApplyMutations(org.GetProgram(), r);
   });
+  // TODO: setup mutation set (vector of mutation functions) that we can add mutate functions to
+
+  SetAutoMutate(); // Mutations will occur before deciding where a new organism is placed. 
 }
 
 void MapElitesGPWorld::Init_Hardware() {
@@ -266,7 +362,43 @@ void MapElitesGPWorld::Init_Problem() {
 }
 
 void MapElitesGPWorld::SetupProblem_ChgEnv() {
-  // TODO
+  // In the changing environment, problem..
+  // Setup environment state tags. 
+  switch (ENV_TAG_GEN_METHOD) {
+    case (size_t)CHGENV_TAG_GEN_METHOD::RANDOM: {
+      chgenv_info.env_state_tags = emp::GenRandSignalGPTags<org_t::TAG_WIDTH>(*random_ptr, ENV_STATE_CNT, true);
+      if (ENV_DISTRACTION_SIGS) chgenv_info.distraction_sig_tags = emp::GenRandSignalGPTags<org_t::TAG_WIDTH>(*random_ptr, ENV_DISTRACTION_SIG_CNT, true, chgenv_info.env_state_tags);
+      SaveChgEnvTags();
+      break;
+    }
+    case (size_t)CHGENV_TAG_GEN_METHOD::LOAD: {
+      LoadChgEnvTags();
+      break;
+    }
+    default: {
+      std::cout << "Unrecognized ENV_TAG_GEN_METHOD (" << ENV_TAG_GEN_METHOD << "). Exiting..." << std::endl;
+      exit(-1);
+    }
+  }
+
+  // Print environment tags
+  std::cout << "Environment tags (" << chgenv_info.env_state_tags.size() << "): " << std::endl;
+  for (size_t i = 0; i < chgenv_info.env_state_tags.size(); ++i) {
+    std::cout << i << ":";
+    chgenv_info.env_state_tags[i].Print();
+    std::cout << std::endl;
+  }
+  std::cout << "Distraction signal tags (" << chgenv_info.distraction_sig_tags.size() << "): " << std::endl;
+  for (size_t i = 0; i < chgenv_info.distraction_sig_tags.size(); ++i) {
+    std::cout << i << ":";
+    chgenv_info.distraction_sig_tags[i].Print();
+    std::cout << std::endl;
+  }
+  
+
+// env_shuffler
+// env_shuffle_id
+// chgenv_info
 }
 
 void MapElitesGPWorld::SetupProblem_Testcases() {
@@ -295,6 +427,76 @@ void MapElitesGPWorld::RunStep() {
   do_evaluation_sig.Trigger();
   do_selection_sig.Trigger();
   do_world_update_sig.Trigger();
+}
+
+// === Changing environment utility functions
+void MapElitesGPWorld::SaveChgEnvTags() {
+  // Save out environment states.
+  std::ofstream envtags_ofstream(ENV_TAG_FPATH);
+  envtags_ofstream << "tag_id,tag_type,tag\n";
+  for (size_t i = 0; i < chgenv_info.env_state_tags.size(); ++i) {
+    envtags_ofstream << i << ",env,"; chgenv_info.env_state_tags[i].Print(envtags_ofstream); envtags_ofstream << "\n";
+  }
+  for (size_t i = 0; i < chgenv_info.distraction_sig_tags.size(); ++i) {
+    envtags_ofstream << i << ",dist,"; chgenv_info.distraction_sig_tags[i].Print(envtags_ofstream); envtags_ofstream << "\n";
+  }
+  envtags_ofstream.close();
+}
+
+void MapElitesGPWorld::LoadChgEnvTags() {
+  chgenv_info.env_state_tags.resize(ENV_STATE_CNT, tag_t());
+  chgenv_info.distraction_sig_tags.resize(ENV_DISTRACTION_SIG_CNT, tag_t());
+
+  std::ifstream tag_fstream(ENV_TAG_FPATH);
+  if (!tag_fstream.is_open()) {
+    std::cout << "Failed to open " << ENV_TAG_FPATH << ". Exiting..." << std::endl;
+    exit(-1);
+  }
+
+  std::string cur_line;
+  emp::vector<std::string> line_components;
+
+  const size_t tag_id_pos = 0;
+  const size_t tag_type_pos = 1;
+  const size_t tag_pos = 2;
+
+  std::getline(tag_fstream, cur_line); // Consume header.
+
+  while (!tag_fstream.eof()) {
+    std::getline(tag_fstream, cur_line);
+    emp::remove_whitespace(cur_line);
+    
+    if (cur_line == emp::empty_string()) continue;
+    emp::slice(cur_line, line_components, ',');
+
+    size_t tag_id = (size_t)std::stoi(line_components[tag_id_pos]);
+    std::string tag_type = line_components[tag_type_pos];
+
+    if (tag_type == "env") {
+      // Load environment state tag!
+      if (tag_id > chgenv_info.env_state_tags.size()) {
+        std::cout << "WARNING: tag ID exceeds environment states!" << std::endl;
+        continue;
+      }
+      for (size_t i = 0; i < line_components[tag_pos].size(); ++i) {
+        if (i >= org_t::TAG_WIDTH) break;
+        if (line_components[tag_pos][i] == '1') chgenv_info.env_state_tags[tag_id].Set(chgenv_info.env_state_tags[tag_id].GetSize() - i - 1, true);
+      }
+    } else if (tag_type == "dist") {
+      // Load distraction signal tag!
+      if (tag_id > chgenv_info.distraction_sig_tags.size()) {
+        std::cout << "WARNING: tag ID exceeds distraction signals!" << std::endl;
+        continue;
+      }
+      for (size_t i = 0; i < line_components[tag_pos].size(); ++i) {
+        if (i >= org_t::TAG_WIDTH) break;
+        if (line_components[tag_pos][i] == '1') chgenv_info.distraction_sig_tags[tag_id].Set(chgenv_info.distraction_sig_tags[tag_id].GetSize() - i - 1, true);
+      }
+    } else {
+      std::cout << "Unrecognized tag type: " << tag_type << "; continuing..." << std::endl;
+    }
+  }
+  tag_fstream.close();
 }
 
 #endif
