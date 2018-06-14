@@ -50,10 +50,13 @@ public:
   using tag_t = typename hardware_t::affinity_t;
   using trait_id_t = typename org_t::HW_TRAIT_ID;
 
+  using score_fun_t = std::function<double(org_t &, phenotype_t &)>;
 
   struct OrgPhenotype {
     // Generic
-    double score;
+    double score;  
+    std::unordered_set<size_t> functions_used;
+    size_t num_func_entries;
 
     // For changing environment problem
     double env_match_score;
@@ -66,6 +69,8 @@ public:
     void Reset() {
       score = 0;
       env_match_score = 0;
+      num_func_entries = 0; 
+      functions_used.clear();
     }
   };
   
@@ -125,8 +130,12 @@ protected:
   emp::Ptr<hardware_t> eval_hw;
 
   PhenotypeCache<OrgPhenotype> phen_cache;
+  score_fun_t calc_score;
+
 
   size_t eval_time;
+
+  double max_inst_entropy; // TODO: calculate after all instructions have been added to instruction set
 
   // == Problem-specific world info ==
     /// World info relevant to changing environment problem. 
@@ -171,9 +180,13 @@ protected:
   void Init_Problem();
   void Init_Mutator();
   void Init_Hardware();
+  void Init_WorldMode();
 
   void SetupProblem_ChgEnv();
   void SetupProblem_Testcases();
+
+  void SetupWorldMode_EA();
+  void SetupWorldMode_MAPE();
 
   // === Changing environment utility functions
   void SaveChgEnvTags();
@@ -202,6 +215,9 @@ protected:
   /// Used to poke the world as I develop it. 
   void Test() {
     // TODO: run environment for a bit, check changing
+    // for (eval_time = 0; eval_time < 100; ++eval_time) {
+
+    // }
   }
 
 public:
@@ -233,6 +249,7 @@ void MapElitesGPWorld::Setup(MapElitesGPConfig & config) {
   Init_Mutator();       // Configure SignalGPMutator, mutation function.
   Init_Hardware();      // Configure SignalGP hardware. 
   Init_Problem();       // Configure problem.
+  Init_WorldMode();      // Configure run (MAP-Eltes vs. EA, etc)
   // - Setup problem
   // - Setup data tracking (but only in native mode)
   //    - Pop snapshot
@@ -241,15 +258,6 @@ void MapElitesGPWorld::Setup(MapElitesGPConfig & config) {
   // - Setup selection
   //   - MAPE vs. EA
   //      - Setup phen cache size
-  /*
-  For map-eliltes:  --> Need branch w/these signals in SignalGP- 
-  eval_hw->OnBeforeFuncCall([this](hardware_t & hw, size_t fID) {
-    functions_used.emplace(fID);
-  });
-  eval_hw->OnBeforeCoreSpawn([this](hardware_t & hw, size_t fID) {
-    functions_used.emplace(fID);
-  });
-  */
   // - Init population
 
   // Configure run signals. 
@@ -391,6 +399,14 @@ void MapElitesGPWorld::Init_Hardware() {
   eval_hw->SetMaxCores(HW_MAX_THREAD_CNT);
   eval_hw->SetMaxCallDepth(HW_MAX_CALL_DEPTH);
 
+  // TODO: add these back in once pull request goes through!
+  // eval_hw->OnBeforeFuncCall([this](hardware_t & hw, size_t fID) {
+  //   functions_used.emplace(fID);
+  // });
+  // eval_hw->OnBeforeCoreSpawn([this](hardware_t & hw, size_t fID) {
+  //   functions_used.emplace(fID);
+  // });
+
 }
 
 /// Initialize selected problem. 
@@ -406,6 +422,23 @@ void MapElitesGPWorld::Init_Problem() {
     }
     default: {
       std::cout << "Unrecognized problem type (" << PROBLEM_TYPE << "). Exiting..." << std::endl;
+      exit(-1);
+    }
+  }
+}
+
+void MapElitesGPWorld::Init_WorldMode() {
+  switch (RUN_MODE) {
+    case (size_t)WORLD_MODE::EA: {
+      SetupWorldMode_EA();
+      break;
+    }
+    case (size_t)WORLD_MODE::MAPE: {
+      SetupWorldMode_MAPE();
+      break;
+    }
+    default: {
+      std::cout << "Unrecognized run mode (" << RUN_MODE << "). Exiting..." << std::endl;
       exit(-1);
     }
   }
@@ -511,6 +544,14 @@ void MapElitesGPWorld::SetupProblem_ChgEnv() {
 
 void MapElitesGPWorld::SetupProblem_Testcases() {
   // TODO
+}
+
+void MapElitesGPWorld::SetupWorldMode_EA() {
+  // TODO
+}
+
+void MapElitesGPWorld::SetupWorldMode_MAPE() {
+
 }
 
 // === Run functions ===

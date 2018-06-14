@@ -31,6 +31,8 @@ public:
   /// (e.g. program stats, stuff that doesn't change in context of environment)
   struct GenomeInfo {
     bool calculated; ///< Have we already calculated this information for this organism? 
+
+    double inst_entropy;
   };
 
   struct Genome {
