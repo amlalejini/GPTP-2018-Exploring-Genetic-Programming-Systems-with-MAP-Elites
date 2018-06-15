@@ -47,7 +47,7 @@ protected:
     double inst_entropy;
     double inst_cnt; 
 
-    GenomeInfo() calculated(false), inst_entropy(0), inst_cnt(0) { ; }
+    GenomeInfo() : calculated(false), inst_entropy(0), inst_cnt(0) { ; }
   } genome_info;
 
 public:

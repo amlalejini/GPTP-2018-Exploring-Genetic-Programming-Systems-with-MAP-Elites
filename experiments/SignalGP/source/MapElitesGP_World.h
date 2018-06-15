@@ -35,6 +35,7 @@ class MapElitesGPWorld : public emp::World<MapElitesGPOrg> {
 public:
   enum class WORLD_MODE { EA=0, MAPE=1 };
   enum class PROBLEM_TYPE { CHG_ENV=0, TESTCASES=1 };
+  enum class SELECTION_METHOD { TOURNAMENT=0 };
   enum class POP_INIT_METHOD { RANDOM=0, ANCESTOR=1 };
   enum class EVAL_TRIAL_AGG_METHOD { MIN=0, MAX=1, AVG=2 }; 
   enum class CHGENV_TAG_GEN_METHOD { RANDOM=0, LOAD=1 }; 
@@ -89,6 +90,9 @@ protected:
   size_t EVAL_TRIAL_CNT;
   size_t EVAL_TRIAL_AGG_METHOD;
   size_t EVAL_TIME;
+  // == Selection group ==
+  size_t SELECTION_METHOD;
+  size_t TOURNAMENT_SIZE;
   // == Problem group ==
   size_t PROBLEM_TYPE;
   std::string TESTCASES_FPATH;
@@ -118,6 +122,7 @@ protected:
   double FUNC_DUP__PER_FUNC;
   double FUNC_DEL__PER_FUNC;
   double TAG_BIT_FLIP__PER_BIT;
+  bool EVOLVE_HW_TAG_SIM_THRESH;
   // == Hardware group ==
   size_t HW_MAX_THREAD_CNT;
   size_t HW_MAX_CALL_DEPTH;
@@ -161,15 +166,16 @@ protected:
   } chgenv_info;
 
   // Run signals
-  emp::Signal<void(void)> do_evaluation_sig;
-  emp::Signal<void(void)> do_selection_sig;
-  emp::Signal<void(void)> do_world_update_sig;
+  emp::Signal<void(void)> do_begin_run_sig; 
+  emp::Signal<void(void)> do_evaluation_sig;    ///< Specific to run mode. Setup by RUN_MODE/WORLD_MODE setup. 
+  emp::Signal<void(void)> do_selection_sig;     ///< Specific to run mode. Setup by RUN_MODE/WORLD_MODE setup.
+  emp::Signal<void(void)> do_world_update_sig;  ///< Generic. Setup during general Setup.  
 
   // TODO: when caching phenotypes, make cache max_env size + 1; use last position for MAP-elites eval
   //  - Use GetSize() for max capacity
 
   // Data-tracking signals
-  emp::Signal<void(size_t)> do_pop_snapshot_sig;
+  emp::Signal<void(void)> do_pop_snapshot_sig;
 
   // Fitness evaluation signals
   emp::Signal<void(org_t &)> begin_org_eval_sig;  ///< Triggered at beginning of agent evaluation (might be multiple trials)
@@ -195,7 +201,11 @@ protected:
   void SetupWorldMode_EA();
   void SetupWorldMode_MAPE();
 
-  // === Changing environment utility functions
+  // === Population initialization (things that put stuff into the population) ===
+  void InitPop_Random();
+  void InitPop_Ancestor();
+
+  // === Changing environment utility functions ===
   void SaveChgEnvTags();
   void LoadChgEnvTags();
 
@@ -267,6 +277,25 @@ void MapElitesGPWorld::Setup(MapElitesGPConfig & config) {
   //      - Setup phen cache size
   // - Init population
 
+  switch (POP_INIT_METHOD) {
+    case (size_t)POP_INIT_METHOD::RANDOM: {
+      do_begin_run_sig.AddAction([this]() {
+        InitPop_Random();
+      });
+      break;
+    }
+    case (size_t)POP_INIT_METHOD::ANCESTOR: {
+      do_begin_run_sig.AddAction([this]() {
+        InitPop_Ancestor();
+      });
+      break;
+    }
+    default: {
+      std::cout << "Unrecognized POP_INIT_METHOD (" << POP_INIT_METHOD << "). Exiting..." << std::endl;
+      exit(-1);
+    }
+  }
+
   // Setup the fitness function
   switch (EVAL_TRIAL_AGG_METHOD) {
     case (size_t)EVAL_TRIAL_AGG_METHOD::MIN: {
@@ -310,7 +339,7 @@ void MapElitesGPWorld::Setup(MapElitesGPConfig & config) {
 
   // Configure world update signal. 
   do_world_update_sig.AddAction([this]() {
-    if (update % POP_SNAPSHOT_INTERVAL == 0) do_pop_snapshot_sig.Trigger(update);
+    if (update % POP_SNAPSHOT_INTERVAL == 0) do_pop_snapshot_sig.Trigger();
     Update(); 
   });
 
@@ -324,29 +353,38 @@ void MapElitesGPWorld::Setup(MapElitesGPConfig & config) {
 
   // });
 
+  // Setup evaluation trial signals
+  // - Begin trial
   begin_org_trial_sig.AddAction([this](org_t & org) {
     // Reset hardware.
     ResetEvalHW();
     // Reset phenotype
     phen_cache.Get(org.GetPos(), trial_id).Reset();
   });
-
+  // - Do trial
   do_org_trial_sig.AddAction([this](org_t & org) {
-    for (trial_time = 0; trial_time < EVAL_TIME; ++trial_time) {
+    for (eval_time = 0; eval_time < EVAL_TIME; ++eval_time) {
       // 1) Advance environment.
       do_env_advance_sig.Trigger();
       // 2) Advance agent.
       do_org_advance_sig.Trigger(org);
     }
   });
-
+  // - End trial
   end_org_trial_sig.AddAction([this](org_t & org) {
     const size_t id = org.GetPos();
-    phen_cache.Get(id, trial_id).score = calc_score(org, phen);
+    phenotype_t & phen = phen_cache.Get(id, trial_id); 
+    phen.score = calc_score(org, phen);
   });
 
+  // Setup organism advance signal. 
   do_org_advance_sig.AddAction([this](org_t & org) {
     eval_hw->SingleProcess();
+  });
+
+  OnPlacement([this](size_t pos) {
+    org_t & org = GetOrg(pos);
+    org.SetPos(pos);
   });
 
   Test();
@@ -363,6 +401,9 @@ void MapElitesGPWorld::Init_Configs(MapElitesGPConfig & config) {
   EVAL_TRIAL_CNT = config.EVAL_TRIAL_CNT();
   EVAL_TRIAL_AGG_METHOD = config.EVAL_TRIAL_AGG_METHOD();
   EVAL_TIME = config.EVAL_TIME();
+
+  SELECTION_METHOD = config.SELECTION_METHOD();
+  TOURNAMENT_SIZE = config.TOURNAMENT_SIZE();
 
   PROBLEM_TYPE = config.PROBLEM_TYPE();
   TESTCASES_FPATH = config.TESTCASES_FPATH();
@@ -392,6 +433,7 @@ void MapElitesGPWorld::Init_Configs(MapElitesGPConfig & config) {
   FUNC_DUP__PER_FUNC = config.FUNC_DUP__PER_FUNC();
   FUNC_DEL__PER_FUNC = config.FUNC_DEL__PER_FUNC();
   TAG_BIT_FLIP__PER_BIT = config.TAG_BIT_FLIP__PER_BIT();
+  EVOLVE_HW_TAG_SIM_THRESH = config.EVOLVE_HW_TAG_SIM_THRESH();
 
   HW_MAX_THREAD_CNT = config.HW_MAX_THREAD_CNT();
   HW_MAX_CALL_DEPTH = config.HW_MAX_CALL_DEPTH();
@@ -622,7 +664,7 @@ void MapElitesGPWorld::SetupProblem_ChgEnv() {
 
   // Reset the environment at the begining of a trial
   begin_org_trial_sig.AddAction([this](org_t & org) {
-    chgenv_info.ResetEnv();
+    chgenv_info.ResetEnv(*random_ptr);
   });
 
   do_org_advance_sig.AddAction([this](org_t & org) {
@@ -633,6 +675,7 @@ void MapElitesGPWorld::SetupProblem_ChgEnv() {
   });
 
   // TODO: fitness/phenotype updates
+  
 }
 
 void MapElitesGPWorld::SetupProblem_Testcases() {
@@ -640,19 +683,32 @@ void MapElitesGPWorld::SetupProblem_Testcases() {
 }
 
 void MapElitesGPWorld::SetupWorldMode_EA() {
-  // TODO
   // do_evaluation_sig
   do_evaluation_sig.AddAction([this]() {
     // Evaluate e'rybody! 
     for (size_t id = 0; id < GetSize(); ++id) {
       org_t & org = GetOrg(id);
-      org.SetPos(id);
+      // org.SetPos(id); // TODO: confirm org position!
       Evaluate(org);
-      double fitness = GetFitness(org);
+      double fitness = CalcFitnessOrg(org);
       if (fitness > best_score || id == 0) { best_score = fitness; dominant_id = id; }
     }
   });
+
   // do_selection_sig
+  switch (SELECTION_METHOD) {
+    case (size_t)SELECTION_METHOD::TOURNAMENT: {
+      do_selection_sig.AddAction([this]() {
+        emp::TournamentSelect(*this, TOURNAMENT_SIZE, POP_SIZE);
+      });
+      break;
+    }
+    default: {
+      std::cout << "Unrecognized SELECTION_METHOD (" << SELECTION_METHOD << "). Exiting..." << std::endl;
+      exit(-1);
+    }
+  }
+  
 }
 
 void MapElitesGPWorld::SetupWorldMode_MAPE() {
@@ -667,6 +723,7 @@ void MapElitesGPWorld::Run() {
     case (size_t)WORLD_MODE::EA: 
       // EA-mode does the same thing as MAPE-mode during a run. (we leave the break out and drop into MAPE case)
     case (size_t)WORLD_MODE::MAPE: {
+      do_begin_run_sig.Trigger();
       for (size_t u = 0; u <= GENERATIONS; ++u) {
         RunStep();
       }
@@ -753,6 +810,40 @@ void MapElitesGPWorld::LoadChgEnvTags() {
     }
   }
   tag_fstream.close();
+}
+
+// === Functions that initialize the population
+void MapElitesGPWorld::InitPop_Random() {
+  // NOTE: If particular attribute is evolvable, randomize it!
+  std::cout << "Randomly initializing population!" << std::endl;
+  for (size_t i = 0; i < POP_SIZE; ++i) {
+    program_t prog(emp::GenRandSignalGPProgram(*random_ptr, inst_lib, 
+                                               PROG_MIN_FUNC_CNT, PROG_MAX_FUNC_CNT,
+                                               PROG_MIN_FUNC_LEN, PROG_MAX_FUNC_LEN,
+                                               PROG_MIN_ARG_VAL, PROG_MAX_ARG_VAL));
+    const double sim_thresh = (EVOLVE_HW_TAG_SIM_THRESH) ? random_ptr->GetDouble(0, 1.0) : HW_MIN_TAG_SIMILARITY_THRESH;
+    genome_t ancestor_genome(prog, sim_thresh);
+    Inject(ancestor_genome, 1.0);  
+  }
+  std::cout << "Done randomly initializing population!" << std::endl;
+}
+
+// WARNING (to future self; 'sup future self): currently no support for loading in custom similarity threshold. 
+void MapElitesGPWorld::InitPop_Ancestor() {
+  std::cout << "Initializing population from ancestor file (" << ANCESTOR_FPATH << ")!" << std::endl;
+  // Configure the ancestor program.
+  program_t ancestor_prog(&inst_lib);
+  std::ifstream ancestor_fstream(ANCESTOR_FPATH);
+  if (!ancestor_fstream.is_open()) {
+    std::cout << "Failed to open ancestor program file(" << ANCESTOR_FPATH << "). Exiting..." << std::endl;
+    exit(-1);
+  }
+  ancestor_prog.Load(ancestor_fstream);
+  std::cout << " --- Ancestor program: ---" << std::endl;
+  ancestor_prog.PrintProgramFull();
+  std::cout << " -------------------------" << std::endl;
+  genome_t ancestor_genome(ancestor_prog, HW_MIN_TAG_SIMILARITY_THRESH);
+  Inject(ancestor_genome, POP_SIZE);    // Inject population!
 }
 
 #endif
