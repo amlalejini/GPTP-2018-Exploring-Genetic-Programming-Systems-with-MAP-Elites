@@ -27,14 +27,6 @@ public:
   ///   - PROBLEM_OUTPUT - used to track organism's output to a problem.                              ///
   enum HW_TRAIT_ID { PROBLEM_OUTPUT=0, ORG_STATE=1 }; 
 
-  /// Information about organism genome
-  /// (e.g. program stats, stuff that doesn't change in context of environment)
-  struct GenomeInfo {
-    bool calculated; ///< Have we already calculated this information for this organism? 
-
-    double inst_entropy;
-  };
-
   struct Genome {
     program_t program;
     double tag_sim_thresh;
@@ -47,10 +39,20 @@ public:
 protected:
   size_t pos; ///< Position in world.
   genome_t genome;
+  
+  /// Information about organism genome
+  /// (e.g. program stats, stuff that doesn't change in context of environment)
+  struct GenomeInfo {
+    bool calculated; ///< Have we already calculated this information for this organism? 
+    double inst_entropy;
+    double inst_cnt; 
+
+    GenomeInfo() calculated(false), inst_entropy(0), inst_cnt(0) { ; }
+  } genome_info;
 
 public:
   // TODO: reset genome info on birth!
-  MapElitesGPOrg(const genome_t & _g) : pos(0), genome(_g) { ; }
+  MapElitesGPOrg(const genome_t & _g) : pos(0), genome(_g), genome_info() { ; }
   MapElitesGPOrg(const MapElitesGPOrg &) = default;
   MapElitesGPOrg(MapElitesGPOrg &&) = default;
 
@@ -59,6 +61,15 @@ public:
 
   genome_t & GetGenome() { return genome; }
   program_t & GetProgram() { return genome.program; }
+
+  void ResetGenomeInfo() { genome_info.calculated = false; }
+  
+  void CalcGenomeInfo() {
+    // TODO: force genome info calculation
+    // - inst entropy
+    // - inst count...
+    genome_info.calculated = true; 
+  }
 
 };
 

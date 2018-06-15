@@ -15,6 +15,7 @@ EMP_BUILD_CONFIG( MapElitesGPConfig,
   GROUP(EVALUATION, "Settings related to evaluating SignalGP programs."),
   VALUE(EVAL_TRIAL_CNT, size_t, 3, "How many independent trials should we evaluate each program for when calculating fitness?"),
   VALUE(EVAL_TRIAL_AGG_METHOD, size_t, 0, "What method should we use to aggregate scores (to determine actual fitness) across fitness evaluation trials? \n0: Fitness = Min trial score \n1: Fitness = Max trial score \n2: Fitness = Avg trial score"),
+  VALUE(EVAL_TIME, size_t, 128, "How many time steps should we evaluate organisms during each evaluation trial?"),
 
   GROUP(PROBLEM, "Settings related to the problem we're evolving programs to solve."),
   VALUE(PROBLEM_TYPE, size_t, 0, "What problem are we solving? \n0: Changing environment problem \n1: Testcase problem (requires TESTCASES_FPATH setting)"),

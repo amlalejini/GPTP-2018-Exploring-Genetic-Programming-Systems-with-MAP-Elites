@@ -36,6 +36,7 @@ public:
   enum class WORLD_MODE { EA=0, MAPE=1 };
   enum class PROBLEM_TYPE { CHG_ENV=0, TESTCASES=1 };
   enum class POP_INIT_METHOD { RANDOM=0, ANCESTOR=1 };
+  enum class EVAL_TRIAL_AGG_METHOD { MIN=0, MAX=1, AVG=2 }; 
   enum class CHGENV_TAG_GEN_METHOD { RANDOM=0, LOAD=1 }; 
   enum class ENV_CHG_METHOD { PROB=0, CYCLE=1 };
   struct OrgPhenotype;
@@ -87,6 +88,7 @@ protected:
   // == Evaluation group ==
   size_t EVAL_TRIAL_CNT;
   size_t EVAL_TRIAL_AGG_METHOD;
+  size_t EVAL_TIME;
   // == Problem group ==
   size_t PROBLEM_TYPE;
   std::string TESTCASES_FPATH;
@@ -134,13 +136,16 @@ protected:
   PhenotypeCache<OrgPhenotype> phen_cache;
   score_fun_t calc_score;
 
-
   size_t eval_time;
+  size_t trial_id;
 
   double max_inst_entropy; // TODO: calculate after all instructions have been added to instruction set
 
+  double best_score;
+  size_t dominant_id; 
+
   // == Problem-specific world info ==
-    /// World info relevant to changing environment problem. 
+  /// World info relevant to changing environment problem. 
   struct ChgEnvProblemInfo {
       emp::vector<tag_t> env_state_tags;        ///< Tags associated with each environment state.
       emp::vector<tag_t> distraction_sig_tags;  ///< Tags associated with distraction signals.
@@ -206,7 +211,7 @@ protected:
   /// Evaluate given agent.
   void Evaluate(org_t & org) {
     begin_org_eval_sig.Trigger(org);  //? Can I keep trial ID local? 
-    for (size_t trial_id = 0; trial_id < EVAL_TRIAL_CNT; ++trial_id) {
+    for (trial_id = 0; trial_id < EVAL_TRIAL_CNT; ++trial_id) {
       begin_org_trial_sig.Trigger(org);
       do_org_trial_sig.Trigger(org);
       end_org_trial_sig.Trigger(org);
@@ -262,7 +267,48 @@ void MapElitesGPWorld::Setup(MapElitesGPConfig & config) {
   //      - Setup phen cache size
   // - Init population
 
-  // Configure run signals. 
+  // Setup the fitness function
+  switch (EVAL_TRIAL_AGG_METHOD) {
+    case (size_t)EVAL_TRIAL_AGG_METHOD::MIN: {
+      SetFitFun([this](org_t & org) {
+        double score = phen_cache.Get(org.GetPos(), 0).score;
+        for (size_t tID = 1; tID < EVAL_TRIAL_CNT; ++tID) {
+          double other_score = phen_cache.Get(org.GetPos(), tID).score;
+          if (other_score < score) score = other_score;
+        }
+        return score;
+      });
+      break;
+    }
+    case (size_t)EVAL_TRIAL_AGG_METHOD::MAX: {
+      SetFitFun([this](org_t & org) {
+        double score = phen_cache.Get(org.GetPos(), 0).score;
+        for (size_t tID = 1; tID < EVAL_TRIAL_CNT; ++tID) {
+          double other_score = phen_cache.Get(org.GetPos(), tID).score;
+          if (other_score > score) score = other_score;
+        }
+        return score;
+      });
+      break;
+    }
+    case (size_t)EVAL_TRIAL_AGG_METHOD::AVG: {
+      SetFitFun([this](org_t & org) {
+        double agg_score = phen_cache.Get(org.GetPos(), 0).score;
+        for (size_t tID = 1; tID < EVAL_TRIAL_CNT; ++tID) {
+          agg_score += phen_cache.Get(org.GetPos(), tID).score;
+        }
+        return agg_score / EVAL_TRIAL_CNT;
+
+      });
+      break;
+    }
+    default: {
+      std::cout << "Unrecognized EVAL_TRIAL_AGG_METHOD (" << EVAL_TRIAL_AGG_METHOD << "). Exiting..." << std::endl;
+      exit(-1);
+    }
+  }
+
+  // Configure world update signal. 
   do_world_update_sig.AddAction([this]() {
     if (update % POP_SNAPSHOT_INTERVAL == 0) do_pop_snapshot_sig.Trigger(update);
     Update(); 
@@ -272,6 +318,35 @@ void MapElitesGPWorld::Setup(MapElitesGPConfig & config) {
   // - At beginning of agent evaluation. 
   begin_org_eval_sig.AddAction([this](org_t & org) {
     eval_hw->SetProgram(org.GetProgram());
+  });
+  
+  // end_org_eval_sig.AddAction([this](org_t & org) {
+
+  // });
+
+  begin_org_trial_sig.AddAction([this](org_t & org) {
+    // Reset hardware.
+    ResetEvalHW();
+    // Reset phenotype
+    phen_cache.Get(org.GetPos(), trial_id).Reset();
+  });
+
+  do_org_trial_sig.AddAction([this](org_t & org) {
+    for (trial_time = 0; trial_time < EVAL_TIME; ++trial_time) {
+      // 1) Advance environment.
+      do_env_advance_sig.Trigger();
+      // 2) Advance agent.
+      do_org_advance_sig.Trigger(org);
+    }
+  });
+
+  end_org_trial_sig.AddAction([this](org_t & org) {
+    const size_t id = org.GetPos();
+    phen_cache.Get(id, trial_id).score = calc_score(org, phen);
+  });
+
+  do_org_advance_sig.AddAction([this](org_t & org) {
+    eval_hw->SingleProcess();
   });
 
   Test();
@@ -287,6 +362,7 @@ void MapElitesGPWorld::Init_Configs(MapElitesGPConfig & config) {
 
   EVAL_TRIAL_CNT = config.EVAL_TRIAL_CNT();
   EVAL_TRIAL_AGG_METHOD = config.EVAL_TRIAL_AGG_METHOD();
+  EVAL_TIME = config.EVAL_TIME();
 
   PROBLEM_TYPE = config.PROBLEM_TYPE();
   TESTCASES_FPATH = config.TESTCASES_FPATH();
@@ -361,14 +437,13 @@ void MapElitesGPWorld::Init_Mutator() {
                       });
 
   SetMutFun([this](org_t & org, emp::Random & r) {
+    org.ResetGenomeInfo();
     size_t mut_cnt = 0; 
     for (size_t f = 0; f < mut_funs.size(); ++f) {
       mut_cnt += mut_funs[f](org, r);
     }
     return mut_cnt;
   });
-  // TODO: setup mutation set (vector of mutation functions) that we can add mutate functions to
-
   SetAutoMutate(); // Mutations will occur before deciding where a new organism is placed. 
 }
 
@@ -409,19 +484,11 @@ void MapElitesGPWorld::Init_Hardware() {
   eval_hw->SetMaxCores(HW_MAX_THREAD_CNT);
   eval_hw->SetMaxCallDepth(HW_MAX_CALL_DEPTH);
 
-  // TODO: add these back in once pull request goes through!
-  // eval_hw->OnBeforeFuncCall([this](hardware_t & hw, size_t fID) {
-  //   functions_used.emplace(fID);
-  // });
-  // eval_hw->OnBeforeCoreSpawn([this](hardware_t & hw, size_t fID) {
-  //   functions_used.emplace(fID);
-  // });
-
 }
 
 /// Initialize selected problem. 
 void MapElitesGPWorld::Init_Problem() {
-  switch(PROBLEM_TYPE) {
+  switch (PROBLEM_TYPE) {
     case (size_t)PROBLEM_TYPE::CHG_ENV: {
       SetupProblem_ChgEnv();
       break;
@@ -553,6 +620,18 @@ void MapElitesGPWorld::SetupProblem_ChgEnv() {
     return phen.env_match_score;
   };
 
+  // Reset the environment at the begining of a trial
+  begin_org_trial_sig.AddAction([this](org_t & org) {
+    chgenv_info.ResetEnv();
+  });
+
+  do_org_advance_sig.AddAction([this](org_t & org) {
+    const size_t org_id = org.GetPos();
+    if ((size_t)eval_hw->GetTrait(org_t::ORG_STATE) == chgenv_info.env_state) {
+      phen_cache.Get(org_id, trial_id).env_match_score += 1;
+    }
+  });
+
   // TODO: fitness/phenotype updates
 }
 
@@ -562,10 +641,24 @@ void MapElitesGPWorld::SetupProblem_Testcases() {
 
 void MapElitesGPWorld::SetupWorldMode_EA() {
   // TODO
+  // do_evaluation_sig
+  do_evaluation_sig.AddAction([this]() {
+    // Evaluate e'rybody! 
+    for (size_t id = 0; id < GetSize(); ++id) {
+      org_t & org = GetOrg(id);
+      org.SetPos(id);
+      Evaluate(org);
+      double fitness = GetFitness(org);
+      if (fitness > best_score || id == 0) { best_score = fitness; dominant_id = id; }
+    }
+  });
+  // do_selection_sig
 }
 
 void MapElitesGPWorld::SetupWorldMode_MAPE() {
-
+  // TODO
+  // do_evaluation_sig
+  // do_selection_sig
 }
 
 // === Run functions ===
