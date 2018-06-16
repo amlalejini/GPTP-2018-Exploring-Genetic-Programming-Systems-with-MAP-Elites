@@ -28,5 +28,6 @@ int main(int argc, char* argv[])
   // Make, setup, and run the world!
   MapElitesGPWorld world(rnd);
   world.Setup(config);
+  world.Run();
 
 }

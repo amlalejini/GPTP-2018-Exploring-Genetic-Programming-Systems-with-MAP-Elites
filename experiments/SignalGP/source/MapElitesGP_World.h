@@ -23,7 +23,6 @@
 #include "tools/string_utils.h"
 #include "tools/stats.h"
 
-
 // Experiment-specific includes
 #include "MapElitesGP_Config.h"
 #include "MapElitesGP_Org.h"
@@ -31,8 +30,17 @@
 
 #include "PhenotypeCache.h"
 
+// Major TODOS: 
+// - [ ] Add data tracking (snapshots, fitness, dominant, etc)
+// - [ ] Add logic 9 problem 
+// - [ ] Add testcase problems
+// - [ ] Add MAP-Elites support
+//  - Add traits (trait calculation, etc)
+
 class MapElitesGPWorld : public emp::World<MapElitesGPOrg> {
 public:
+  static constexpr double MIN_POSSIBLE_SCORE = -32767;
+
   enum class WORLD_MODE { EA=0, MAPE=1 };
   enum class PROBLEM_TYPE { CHG_ENV=0, TESTCASES=1 };
   enum class SELECTION_METHOD { TOURNAMENT=0 };
@@ -49,6 +57,9 @@ public:
   using genome_t = typename org_t::genome_t;
   using inst_lib_t = typename org_t::inst_lib_t;
   using event_lib_t = typename org_t::event_lib_t;
+  using inst_t = typename hardware_t::inst_t;
+  using event_t = typename hardware_t::event_t;
+  using state_t = typename hardware_t::State;
   using tag_t = typename hardware_t::affinity_t;
   using trait_id_t = typename org_t::HW_TRAIT_ID;
 
@@ -93,6 +104,11 @@ protected:
   // == Selection group ==
   size_t SELECTION_METHOD;
   size_t TOURNAMENT_SIZE;
+  // == MAPE group
+  bool USE_MAPE_AXIS__INST_ENTROPY;
+  bool USE_MAPE_AXIS__INST_CNT;
+  bool USE_MAPE_AXIS__FUNC_USED;
+  bool USE_MAPE_AXIS__FUNC_CNT;
   // == Problem group ==
   size_t PROBLEM_TYPE;
   std::string TESTCASES_FPATH;
@@ -100,11 +116,13 @@ protected:
   size_t ENV_TAG_GEN_METHOD;
   std::string ENV_TAG_FPATH;
   size_t ENV_STATE_CNT;
+  bool ENV_CHG_SIG;
   bool ENV_DISTRACTION_SIGS;
   size_t ENV_DISTRACTION_SIG_CNT;
   size_t ENV_CHG_METHOD;
   double ENV_CHG_PROB;
   size_t ENV_CHG_RATE;
+  bool ENV_SENSORS;
   // == Program constraints group ==
   size_t PROG_MIN_FUNC_CNT;
   size_t PROG_MAX_FUNC_CNT;
@@ -140,6 +158,7 @@ protected:
 
   PhenotypeCache<OrgPhenotype> phen_cache;
   score_fun_t calc_score;
+  std::function<double(org_t &)> agg_scores;
 
   size_t eval_time;
   size_t trial_id;
@@ -296,39 +315,43 @@ void MapElitesGPWorld::Setup(MapElitesGPConfig & config) {
     }
   }
 
+  do_begin_run_sig.AddAction([this]() {
+    phen_cache.Resize(GetSize() + 1, EVAL_TRIAL_CNT); // Add one position as temp position for MAP-elites
+  });
+
   // Setup the fitness function
   switch (EVAL_TRIAL_AGG_METHOD) {
     case (size_t)EVAL_TRIAL_AGG_METHOD::MIN: {
-      SetFitFun([this](org_t & org) {
+      agg_scores = [this](org_t & org) {
         double score = phen_cache.Get(org.GetPos(), 0).score;
         for (size_t tID = 1; tID < EVAL_TRIAL_CNT; ++tID) {
           double other_score = phen_cache.Get(org.GetPos(), tID).score;
           if (other_score < score) score = other_score;
         }
         return score;
-      });
+      };
       break;
     }
     case (size_t)EVAL_TRIAL_AGG_METHOD::MAX: {
-      SetFitFun([this](org_t & org) {
+      agg_scores = [this](org_t & org) {
         double score = phen_cache.Get(org.GetPos(), 0).score;
         for (size_t tID = 1; tID < EVAL_TRIAL_CNT; ++tID) {
           double other_score = phen_cache.Get(org.GetPos(), tID).score;
           if (other_score > score) score = other_score;
         }
         return score;
-      });
+      };
       break;
     }
     case (size_t)EVAL_TRIAL_AGG_METHOD::AVG: {
-      SetFitFun([this](org_t & org) {
+      agg_scores = [this](org_t & org) {
         double agg_score = phen_cache.Get(org.GetPos(), 0).score;
         for (size_t tID = 1; tID < EVAL_TRIAL_CNT; ++tID) {
           agg_score += phen_cache.Get(org.GetPos(), tID).score;
         }
         return agg_score / EVAL_TRIAL_CNT;
 
-      });
+      };
       break;
     }
     default: {
@@ -339,6 +362,7 @@ void MapElitesGPWorld::Setup(MapElitesGPConfig & config) {
 
   // Configure world update signal. 
   do_world_update_sig.AddAction([this]() {
+    std::cout << "Update: " << GetUpdate() << " Max score: " << best_score << std::endl;
     if (update % POP_SNAPSHOT_INTERVAL == 0) do_pop_snapshot_sig.Trigger();
     Update(); 
   });
@@ -387,7 +411,6 @@ void MapElitesGPWorld::Setup(MapElitesGPConfig & config) {
     org.SetPos(pos);
   });
 
-  Test();
 }
 
 void MapElitesGPWorld::Init_Configs(MapElitesGPConfig & config) {
@@ -405,17 +428,24 @@ void MapElitesGPWorld::Init_Configs(MapElitesGPConfig & config) {
   SELECTION_METHOD = config.SELECTION_METHOD();
   TOURNAMENT_SIZE = config.TOURNAMENT_SIZE();
 
+  USE_MAPE_AXIS__INST_ENTROPY = config.USE_MAPE_AXIS__INST_ENTROPY();
+  USE_MAPE_AXIS__INST_CNT = config.USE_MAPE_AXIS__INST_CNT();
+  USE_MAPE_AXIS__FUNC_USED = config.USE_MAPE_AXIS__FUNC_USED();
+  USE_MAPE_AXIS__FUNC_CNT = config.USE_MAPE_AXIS__FUNC_CNT();
+
   PROBLEM_TYPE = config.PROBLEM_TYPE();
   TESTCASES_FPATH = config.TESTCASES_FPATH();
 
   ENV_TAG_GEN_METHOD = config.ENV_TAG_GEN_METHOD();
   ENV_TAG_FPATH = config.ENV_TAG_FPATH();
   ENV_STATE_CNT = config.ENV_STATE_CNT();
+  ENV_CHG_SIG = config.ENV_CHG_SIG();
   ENV_DISTRACTION_SIGS = config.ENV_DISTRACTION_SIGS();
   ENV_DISTRACTION_SIG_CNT = config.ENV_DISTRACTION_SIG_CNT();
   ENV_CHG_METHOD = config.ENV_CHG_METHOD();
   ENV_CHG_PROB = config.ENV_CHG_PROB();
   ENV_CHG_RATE = config.ENV_CHG_RATE();
+  ENV_SENSORS = config.ENV_SENSORS();
 
   PROG_MIN_FUNC_CNT = config.PROG_MIN_FUNC_CNT();
   PROG_MAX_FUNC_CNT = config.PROG_MAX_FUNC_CNT();
@@ -674,7 +704,38 @@ void MapElitesGPWorld::SetupProblem_ChgEnv() {
     }
   });
 
-  // TODO: fitness/phenotype updates
+  // Setup instructions/events specific to changing environment problem.
+
+  // Add 1 set state instruction for every possible environment state.
+  for (size_t i = 0; i < ENV_STATE_CNT; ++i) {
+    inst_lib.AddInst("SetState-" + emp::to_string(i),
+      [i](hardware_t & hw, const inst_t & inst) {
+        hw.SetTrait(org_t::HW_TRAIT_ID::ORG_STATE, i);
+      }, 0, "Set internal state to " + emp::to_string(i));
+  }
+
+  // Add events!
+  if (ENV_CHG_SIG) {
+    // Use event-driven events.
+    event_lib.AddEvent("EnvSignal", [](hardware_t & hw, const event_t & event) { hw.SpawnCore(event.affinity, hw.GetMinBindThresh(), event.msg); }, "Event handler for ");
+    event_lib.RegisterDispatchFun("EnvSignal", [](hardware_t & hw, const event_t & event) { hw.QueueEvent(event); } );
+  } else {
+    // Use nop events.
+    event_lib.AddEvent("EnvSignal", [](hardware_t &, const event_t &) { ; }, "");
+    event_lib.RegisterDispatchFun("EnvSignal", [](hardware_t &, const event_t &) { ; });
+  }
+
+  // Add sensors!
+  if (ENV_SENSORS) {
+    // Add sensors to instruction set.
+    for (int i = 0; i < ENV_STATE_CNT; ++i) {
+      inst_lib.AddInst("SenseState-" + emp::to_string(i),
+        [this, i](hardware_t & hw, const inst_t & inst) {
+          state_t & state = hw.GetCurState();
+          state.SetLocal(inst.args[0], this->chgenv_info.env_state==i);
+        }, 1, "Sense if current environment state is " + emp::to_string(i));
+    }
+  }
   
 }
 
@@ -708,13 +769,64 @@ void MapElitesGPWorld::SetupWorldMode_EA() {
       exit(-1);
     }
   }
+
+  SetFitFun([this](org_t & org) {
+    return agg_scores(org);
+  });
   
 }
 
 void MapElitesGPWorld::SetupWorldMode_MAPE() {
   // TODO
   // do_evaluation_sig
+  do_evaluation_sig.AddAction([this]() {
+    best_score = MIN_POSSIBLE_SCORE;
+  });
+
   // do_selection_sig
+  do_selection_sig.AddAction([this]() {
+    emp::RandomSelect(*this, POP_SIZE);
+  });
+  
+  // Setup fitness function
+  SetFitFun([this](org_t & org) {
+    const size_t id = GetSize();
+    org.SetPos(id);
+    // Evaluate!
+    Evaluate(org);
+    // Grab score
+    const double score = agg_scores(org);
+    if (score > best_score) { best_score = score; dominant_id = id; }
+    return score;
+  });
+
+  // Setup traits
+  // USE_MAPE_AXIS__INST_CNT
+  // USE_MAPE_AXIS__FUNC_USED
+  // USE_MAPE_AXIS__FUNC_CNT
+  // NOTE: How do I want to do functions used?
+  //  - Average across trials? 
+  //  - Pick a random trial? 
+  //  - Total across trials? <-- leaning this way
+  emp::vector<size_t> trait_bin_sizes;
+  if (USE_MAPE_AXIS__INST_ENTROPY) {
+    std::cout << "Configuring instruction entropy axis" << std::endl;
+    // AddPhenotype("InstEntropy", [](org_t & org) { return org.GetInstEntropy(); }); 
+    // world->AddPhenotype("InstEntropy", inst_ent_fun, 0.0, max_inst_entropy + 0.1);
+    // trait_bin_sizes.emplace_back(MAP_ELITES_AXIS_RES__INST_ENTROPY);
+  }
+  if (USE_MAPE_AXIS__FUNC_USED) {
+    std::cout << "Configuring functions used axis" << std::endl;
+    // world->AddPhenotype("FunctionsUsed", func_used_fun, 0, SGP_PROG_MAX_FUNC_CNT+1);
+    // trait_bin_sizes.emplace_back(SGP_PROG_MAX_FUNC_CNT+1);
+  }
+  if (USE_MAPE_AXIS__FUNC_CNT) {
+    std::cout << "Configuring function count axis" << std::endl;
+    // world->AddPhenotype("FunctionCnt", func_cnt_fun, SGP_PROG_MIN_FUNC_CNT, SGP_PROG_MAX_FUNC_CNT+1);
+    // trait_bin_sizes.emplace_back(SGP_PROG_MAX_FUNC_CNT+1);
+  }
+
+
 }
 
 // === Run functions ===

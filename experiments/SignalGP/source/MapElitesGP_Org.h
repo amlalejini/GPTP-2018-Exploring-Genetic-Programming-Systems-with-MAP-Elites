@@ -71,6 +71,11 @@ public:
     genome_info.calculated = true; 
   }
 
+  // TODO
+  double GetInstEntropy() { return 0.0; }
+  double GetInstCnt() { return 0.0; }
+  double GetFunctionCnt() { return 0.0; }
+
 };
 
 #endif
