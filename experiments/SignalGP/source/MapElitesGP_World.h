@@ -69,8 +69,8 @@ public:
   struct OrgPhenotype {
     // Generic
     double score;  
-    std::unordered_set<size_t> functions_used;
-    size_t num_func_entries;
+    std::unordered_set<size_t> functions_used_set;
+    emp::vector<size_t> function_entries;           ///< All functions entered (allows repeats), in the order they were entered.
 
     // For changing environment problem
     double env_match_score;
@@ -83,8 +83,8 @@ public:
     void Reset() {
       score = 0;
       env_match_score = 0;
-      num_func_entries = 0; 
-      functions_used.clear();
+      function_entries.clear();
+      functions_used_set.clear();
     }
   };
   
@@ -104,11 +104,15 @@ protected:
   // == Selection group ==
   size_t SELECTION_METHOD;
   size_t TOURNAMENT_SIZE;
-  // == MAPE group
+  // == MAPE group ==
   bool USE_MAPE_AXIS__INST_ENTROPY;
   bool USE_MAPE_AXIS__INST_CNT;
   bool USE_MAPE_AXIS__FUNC_USED;
   bool USE_MAPE_AXIS__FUNC_CNT;
+  bool USE_MAPE_AXIS__FUNC_ENTERED;
+  bool USE_MAPE_AXIS__FUNC_ENTERED_ENTROPY;
+  size_t MAPE_AXIS_SIZE__INST_ENTROPY;
+  size_t MAPE_AXIS_SIZE__FUNC_ENTERED_ENTROPY;
   // == Problem group ==
   size_t PROBLEM_TYPE;
   std::string TESTCASES_FPATH;
@@ -156,14 +160,22 @@ protected:
 
   emp::Ptr<hardware_t> eval_hw;
 
-  PhenotypeCache<OrgPhenotype> phen_cache;
+  PhenotypeCache<OrgPhenotype> phen_cache;  // NOTE: cache is not necessarily accurate for everyone in pop during MAPE
   score_fun_t calc_score;
   std::function<double(org_t &)> agg_scores;
+
+  std::function<int(org_t &)> inst_cnt_fun;
+  std::function<double(org_t &)> inst_ent_fun;
+  std::function<double(org_t &)> func_used_fun;
+  std::function<double(org_t &)> func_entered_cnt_fun;
+  std::function<double(org_t &)> func_entered_ent_fun;
+  std::function<int(org_t &)> func_cnt_fun;
 
   size_t eval_time;
   size_t trial_id;
 
   double max_inst_entropy; // TODO: calculate after all instructions have been added to instruction set
+  double max_func_entered_entropy; 
 
   double best_score;
   size_t dominant_id; 
@@ -232,6 +244,7 @@ protected:
   void ResetEvalHW() {
     eval_hw->ResetHardware();
     // TODO: add signal for onreset hardware
+    eval_hw->SetTrait(trait_id_t::ORG_ID, -1);
     eval_hw->SetTrait(trait_id_t::PROBLEM_OUTPUT, -1);
     eval_hw->SetTrait(trait_id_t::ORG_STATE, -1);
   }
@@ -282,6 +295,43 @@ void MapElitesGPWorld::Setup(MapElitesGPConfig & config) {
   Reset();              // Reset the world
   SetCache();           // We'll be caching fitness scores
   Init_Configs(config); // Initialize configs
+
+  do_begin_run_sig.AddAction([this]() {
+    // Calculate ranges for phenotypic traits. 
+    max_inst_entropy = -1 * emp::Log2(1.0/((double)inst_lib.GetSize())); // Instruction set must be locked in by this point. 
+    max_func_entered_entropy = -1 * emp::Log2(1.0/((double)PROG_MAX_FUNC_CNT));
+  });
+
+  // Setup descriptive functions used by MAP-Elites (and data tracking, etc). 
+  // - Based on organism genome
+  inst_cnt_fun = [](org_t & org) { return org.GetInstCnt(); };
+  inst_ent_fun = [](org_t & org) { return org.GetInstEntropy(); };
+  func_cnt_fun = [](org_t & org) { return org.GetFunctionCnt(); };
+  // - Based on program execution 
+  func_used_fun = [this](org_t & org) {
+    double total = 0;
+    for (size_t t = 0; t < EVAL_TRIAL_CNT; ++t) {
+      total += phen_cache.Get(org.GetPos(), t).functions_used_set.size();
+    }
+    return total / EVAL_TRIAL_CNT;
+  };
+
+  func_entered_cnt_fun = [this](org_t & org) {
+    double total = 0;
+    for (size_t t = 0; t < EVAL_TRIAL_CNT; ++t) {
+      total += phen_cache.Get(org.GetPos(), t).function_entries.size();
+    }
+    return total / EVAL_TRIAL_CNT;
+  };
+
+  func_entered_ent_fun = [this](org_t & org) {
+    double total = 0; 
+    for (size_t t = 0; t < EVAL_TRIAL_CNT; ++t) {
+      total += emp::ShannonEntropy(phen_cache.Get(org.GetPos(), t).function_entries);
+    }
+    return total / EVAL_TRIAL_CNT;
+  };
+  
   Init_Mutator();       // Configure SignalGPMutator, mutation function.
   Init_Hardware();      // Configure SignalGP hardware. 
   Init_Problem();       // Configure problem.
@@ -295,29 +345,6 @@ void MapElitesGPWorld::Setup(MapElitesGPConfig & config) {
   //   - MAPE vs. EA
   //      - Setup phen cache size
   // - Init population
-
-  switch (POP_INIT_METHOD) {
-    case (size_t)POP_INIT_METHOD::RANDOM: {
-      do_begin_run_sig.AddAction([this]() {
-        InitPop_Random();
-      });
-      break;
-    }
-    case (size_t)POP_INIT_METHOD::ANCESTOR: {
-      do_begin_run_sig.AddAction([this]() {
-        InitPop_Ancestor();
-      });
-      break;
-    }
-    default: {
-      std::cout << "Unrecognized POP_INIT_METHOD (" << POP_INIT_METHOD << "). Exiting..." << std::endl;
-      exit(-1);
-    }
-  }
-
-  do_begin_run_sig.AddAction([this]() {
-    phen_cache.Resize(GetSize() + 1, EVAL_TRIAL_CNT); // Add one position as temp position for MAP-elites
-  });
 
   // Setup the fitness function
   switch (EVAL_TRIAL_AGG_METHOD) {
@@ -377,13 +404,16 @@ void MapElitesGPWorld::Setup(MapElitesGPConfig & config) {
 
   // });
 
+  // TODO: depending on problem, spawn core!
   // Setup evaluation trial signals
   // - Begin trial
   begin_org_trial_sig.AddAction([this](org_t & org) {
     // Reset hardware.
-    ResetEvalHW();
+    ResetEvalHW(); 
     // Reset phenotype
     phen_cache.Get(org.GetPos(), trial_id).Reset();
+    // Set org ID in hardware.
+    eval_hw->SetTrait(trait_id_t::ORG_ID, org.GetPos());
   });
   // - Do trial
   do_org_trial_sig.AddAction([this](org_t & org) {
@@ -406,11 +436,35 @@ void MapElitesGPWorld::Setup(MapElitesGPConfig & config) {
     eval_hw->SingleProcess();
   });
 
+  // TODO: check placement stuff w/MAPE
+  OnBeforePlacement([this](org_t & org, size_t pos) {
+    org.SetPos(GetSize()); // Indicate that this organism has not been placed yet (useful for MAPE). 
+  });
+
   OnPlacement([this](size_t pos) {
     org_t & org = GetOrg(pos);
     org.SetPos(pos);
   });
 
+  // Very last thing: initialize the population
+  switch (POP_INIT_METHOD) {
+    case (size_t)POP_INIT_METHOD::RANDOM: {
+      do_begin_run_sig.AddAction([this]() {
+        InitPop_Random();
+      });
+      break;
+    }
+    case (size_t)POP_INIT_METHOD::ANCESTOR: {
+      do_begin_run_sig.AddAction([this]() {
+        InitPop_Ancestor();
+      });
+      break;
+    }
+    default: {
+      std::cout << "Unrecognized POP_INIT_METHOD (" << POP_INIT_METHOD << "). Exiting..." << std::endl;
+      exit(-1);
+    }
+  }
 }
 
 void MapElitesGPWorld::Init_Configs(MapElitesGPConfig & config) {
@@ -432,6 +486,10 @@ void MapElitesGPWorld::Init_Configs(MapElitesGPConfig & config) {
   USE_MAPE_AXIS__INST_CNT = config.USE_MAPE_AXIS__INST_CNT();
   USE_MAPE_AXIS__FUNC_USED = config.USE_MAPE_AXIS__FUNC_USED();
   USE_MAPE_AXIS__FUNC_CNT = config.USE_MAPE_AXIS__FUNC_CNT();
+  USE_MAPE_AXIS__FUNC_ENTERED = config.USE_MAPE_AXIS__FUNC_ENTERED();
+  USE_MAPE_AXIS__FUNC_ENTERED_ENTROPY = config.USE_MAPE_AXIS__FUNC_ENTERED_ENTROPY();
+  MAPE_AXIS_SIZE__INST_ENTROPY = config.MAPE_AXIS_SIZE__INST_ENTROPY();
+  MAPE_AXIS_SIZE__FUNC_ENTERED_ENTROPY = config.MAPE_AXIS_SIZE__FUNC_ENTERED_ENTROPY();
 
   PROBLEM_TYPE = config.PROBLEM_TYPE();
   TESTCASES_FPATH = config.TESTCASES_FPATH();
@@ -555,6 +613,21 @@ void MapElitesGPWorld::Init_Hardware() {
   eval_hw->SetMinBindThresh(HW_MIN_TAG_SIMILARITY_THRESH);
   eval_hw->SetMaxCores(HW_MAX_THREAD_CNT);
   eval_hw->SetMaxCallDepth(HW_MAX_CALL_DEPTH);
+
+  // Collect function call information. 
+  eval_hw->OnBeforeFuncCall([this](hardware_t & hw, size_t fID) {
+    const size_t org_id =(size_t)hw.GetTrait(trait_id_t::ORG_ID);
+    phenotype_t & phen = phen_cache.Get(org_id, trial_id);
+    phen.functions_used_set.emplace(fID);
+    phen.function_entries.emplace_back(fID);
+  });
+
+  eval_hw->OnBeforeCoreSpawn([this](hardware_t & hw, size_t fID) {
+    const size_t org_id = (size_t)hw.GetTrait(trait_id_t::ORG_ID);
+    phenotype_t & phen = phen_cache.Get(org_id, trial_id);
+    phen.functions_used_set.emplace(fID);
+    phen.function_entries.emplace_back(fID);
+  });
 
 }
 
@@ -773,10 +846,17 @@ void MapElitesGPWorld::SetupWorldMode_EA() {
   SetFitFun([this](org_t & org) {
     return agg_scores(org);
   });
+
+    // One of last things to do before run: resize phenotype cache
+  do_begin_run_sig.AddAction([this]() {
+    std::cout << "Resizing the phenotype cache(" << POP_SIZE << ")!" << std::endl;
+    phen_cache.Resize(POP_SIZE, EVAL_TRIAL_CNT); // Add one position as temp position for MAP-elites
+  });
   
 }
 
 void MapElitesGPWorld::SetupWorldMode_MAPE() {
+  std::cout << "Configuring world mode: MAPE" << std::endl;
   // TODO
   // do_evaluation_sig
   do_evaluation_sig.AddAction([this]() {
@@ -785,47 +865,65 @@ void MapElitesGPWorld::SetupWorldMode_MAPE() {
 
   // do_selection_sig
   do_selection_sig.AddAction([this]() {
+    std::cout << "Doing selection?" << std::endl;
     emp::RandomSelect(*this, POP_SIZE);
   });
   
   // Setup fitness function
   SetFitFun([this](org_t & org) {
-    const size_t id = GetSize();
-    org.SetPos(id);
+    // const size_t id = GetSize();
+    // org.SetPos(id);
+    // TODO: confirm organism position!
     // Evaluate!
     Evaluate(org);
     // Grab score
     const double score = agg_scores(org);
-    if (score > best_score) { best_score = score; dominant_id = id; }
+    std::cout << "Score!: " << score << std::endl;
+    if (score > best_score) { best_score = score; }
     return score;
   });
 
   // Setup traits
-  // USE_MAPE_AXIS__INST_CNT
-  // USE_MAPE_AXIS__FUNC_USED
-  // USE_MAPE_AXIS__FUNC_CNT
-  // NOTE: How do I want to do functions used?
-  //  - Average across trials? 
-  //  - Pick a random trial? 
-  //  - Total across trials? <-- leaning this way
-  emp::vector<size_t> trait_bin_sizes;
-  if (USE_MAPE_AXIS__INST_ENTROPY) {
-    std::cout << "Configuring instruction entropy axis" << std::endl;
-    // AddPhenotype("InstEntropy", [](org_t & org) { return org.GetInstEntropy(); }); 
-    // world->AddPhenotype("InstEntropy", inst_ent_fun, 0.0, max_inst_entropy + 0.1);
-    // trait_bin_sizes.emplace_back(MAP_ELITES_AXIS_RES__INST_ENTROPY);
-  }
-  if (USE_MAPE_AXIS__FUNC_USED) {
-    std::cout << "Configuring functions used axis" << std::endl;
-    // world->AddPhenotype("FunctionsUsed", func_used_fun, 0, SGP_PROG_MAX_FUNC_CNT+1);
-    // trait_bin_sizes.emplace_back(SGP_PROG_MAX_FUNC_CNT+1);
-  }
-  if (USE_MAPE_AXIS__FUNC_CNT) {
-    std::cout << "Configuring function count axis" << std::endl;
-    // world->AddPhenotype("FunctionCnt", func_cnt_fun, SGP_PROG_MIN_FUNC_CNT, SGP_PROG_MAX_FUNC_CNT+1);
-    // trait_bin_sizes.emplace_back(SGP_PROG_MAX_FUNC_CNT+1);
-  }
+  do_begin_run_sig.AddAction([this](){
+    emp::vector<size_t> trait_bin_sizes;
+    if (USE_MAPE_AXIS__INST_ENTROPY) {
+      std::cout << "Configuring instruction entropy axis" << std::endl;
+      AddPhenotype("InstructionEntropy", inst_ent_fun, 0.0, max_inst_entropy + 0.1); 
+      trait_bin_sizes.emplace_back(MAPE_AXIS_SIZE__INST_ENTROPY);
+    }
+    if (USE_MAPE_AXIS__INST_CNT) {
+      std::cout << "Configuring instruction count axis" << std::endl;
+      AddPhenotype("InstructionCnt", inst_cnt_fun, 0, (int)PROG_MAX_TOTAL_LEN);
+      trait_bin_sizes.emplace_back(PROG_MAX_TOTAL_LEN+1);
+    }
+    if (USE_MAPE_AXIS__FUNC_USED) {
+      std::cout << "Configuring functions used axis" << std::endl;
+      AddPhenotype("FunctionsUsed", func_used_fun, 0, PROG_MAX_FUNC_CNT+1);
+      trait_bin_sizes.emplace_back(PROG_MAX_FUNC_CNT+1);
+    }
+    if (USE_MAPE_AXIS__FUNC_CNT) {
+      std::cout << "Configuring function count axis" << std::endl;
+      AddPhenotype("FunctionCnt", func_cnt_fun, 0, (int)PROG_MAX_FUNC_CNT+1);
+      trait_bin_sizes.emplace_back(PROG_MAX_FUNC_CNT+1);
+    }
+    if (USE_MAPE_AXIS__FUNC_ENTERED) {
+      std::cout << "Configuring functions entered axis" << std::endl;
+      AddPhenotype("FunctionsEntered", func_entered_cnt_fun, 0, (EVAL_TIME * HW_MAX_THREAD_CNT)+1);
+      trait_bin_sizes.emplace_back((EVAL_TIME * HW_MAX_THREAD_CNT)+1);
 
+    }
+    if (USE_MAPE_AXIS__FUNC_ENTERED_ENTROPY) {
+      std::cout << "Configuring functions entered entropy axis" << std::endl;
+      AddPhenotype("FunctionsEnteredEntropy", func_entered_ent_fun, 0.0, max_func_entered_entropy);
+      trait_bin_sizes.emplace_back(MAPE_AXIS_SIZE__FUNC_ENTERED_ENTROPY);
+    }
+  });
+
+  // One of last things to do before run: resize phenotype cache
+  do_begin_run_sig.AddAction([this]() {
+    std::cout << "Resizing the phenotype cache (" << GetSize() + 1 << ")!" << std::endl;
+    phen_cache.Resize(GetSize() + 1, EVAL_TRIAL_CNT); // Add one position as temp position for MAP-elites
+  });
 
 }
 

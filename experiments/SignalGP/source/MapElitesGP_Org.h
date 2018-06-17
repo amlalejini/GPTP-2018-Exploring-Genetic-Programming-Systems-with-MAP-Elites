@@ -1,6 +1,8 @@
 #ifndef MAPE_GP_ORG_H
 #define MAPE_GP_ORG_H
 
+#include <algorithm>
+
 #include "hardware/EventDrivenGP.h"
 
 /// Struct describing phenotypic characteristics of MapElitesGPOrg. 
@@ -25,7 +27,7 @@ public:
   /// Hardware trait indexes.                               
   ///   - ORG_STATE - Used to track organism state for changing environment problem.
   ///   - PROBLEM_OUTPUT - used to track organism's output to a problem.                              ///
-  enum HW_TRAIT_ID { PROBLEM_OUTPUT=0, ORG_STATE=1 }; 
+  enum HW_TRAIT_ID { ORG_ID=0, PROBLEM_OUTPUT=1, ORG_STATE=2 }; 
 
   struct Genome {
     program_t program;
@@ -51,7 +53,6 @@ protected:
   } genome_info;
 
 public:
-  // TODO: reset genome info on birth!
   MapElitesGPOrg(const genome_t & _g) : pos(0), genome(_g), genome_info() { ; }
   MapElitesGPOrg(const MapElitesGPOrg &) = default;
   MapElitesGPOrg(MapElitesGPOrg &&) = default;
@@ -65,16 +66,35 @@ public:
   void ResetGenomeInfo() { genome_info.calculated = false; }
   
   void CalcGenomeInfo() {
-    // TODO: force genome info calculation
     // - inst entropy
-    // - inst count...
+    emp::vector<inst_t> inst_seq;
+    program_t & prog = GetProgram();
+    for (size_t fID = 0; fID < prog.GetSize(); ++fID) {
+      for (size_t i = 0; i < prog[fID].GetSize(); ++i) {
+        inst_seq.emplace_back(prog[fID][i].id);
+      }
+    }
+    genome_info.inst_entropy = std::max(emp::ShannonEntropy(inst_seq), 0.0);
+    
+    // - inst count (genome length)
+    genome_info.inst_cnt = inst_seq.size();
+    
     genome_info.calculated = true; 
   }
 
-  // TODO
-  double GetInstEntropy() { return 0.0; }
-  double GetInstCnt() { return 0.0; }
-  double GetFunctionCnt() { return 0.0; }
+  double GetInstEntropy() {
+    if (!genome_info.calculated) CalcGenomeInfo();
+    return genome_info.inst_entropy; 
+  }
+
+  double GetInstCnt() { 
+    if (!genome_info.calculated) CalcGenomeInfo();
+    return genome_info.inst_cnt; 
+  }
+
+  double GetFunctionCnt() { return GetProgram().GetSize(); }
+
+
 
 };
 
