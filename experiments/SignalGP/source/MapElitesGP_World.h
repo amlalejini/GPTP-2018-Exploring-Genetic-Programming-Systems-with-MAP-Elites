@@ -2,6 +2,11 @@
 #define MAPE_GP_WORLD_H
 
 #include <iostream>
+#include <functional>
+#include <string>
+#include <fstream>
+#include <sys/stat.h>
+
 
 // Empirical includes
 #include "base/Ptr.h"
@@ -34,8 +39,7 @@
 // - [ ] Add data tracking (snapshots, fitness, dominant, etc)
 // - [ ] Add logic 9 problem 
 // - [ ] Add testcase problems
-// - [ ] Add MAP-Elites support
-//  - Add traits (trait calculation, etc)
+// - [ ] Testing/debugging
 
 class MapElitesGPWorld : public emp::World<MapElitesGPOrg> {
 public:
@@ -47,7 +51,7 @@ public:
   enum class POP_INIT_METHOD { RANDOM=0, ANCESTOR=1 };
   enum class EVAL_TRIAL_AGG_METHOD { MIN=0, MAX=1, AVG=2 }; 
   enum class CHGENV_TAG_GEN_METHOD { RANDOM=0, LOAD=1 }; 
-  enum class ENV_CHG_METHOD { PROB=0, CYCLE=1 };
+  enum class ENV_CHG_METHOD { SHUFFLE=0, CYCLE=1, RAND=2 };
   struct OrgPhenotype;
 
   using org_t = MapElitesGPOrg; 
@@ -103,6 +107,7 @@ protected:
   size_t EVAL_TIME;
   // == Selection group ==
   size_t SELECTION_METHOD;
+  size_t ELITE_CNT;
   size_t TOURNAMENT_SIZE;
   // == MAPE group ==
   bool USE_MAPE_AXIS__INST_ENTROPY;
@@ -150,7 +155,9 @@ protected:
   size_t HW_MAX_CALL_DEPTH;
   double HW_MIN_TAG_SIMILARITY_THRESH;
   // == Data tracking group ==
-  size_t POP_SNAPSHOT_INTERVAL;
+  std::string DATA_DIRECTORY;
+  size_t STATISTICS_INTERVAL;
+  size_t SNAPSHOT_INTERVAL;
 
   emp::SignalGPMutator<org_t::TAG_WIDTH> mutator;
   emp::vector<mut_fun_t> mut_funs;
@@ -198,6 +205,7 @@ protected:
 
   // Run signals
   emp::Signal<void(void)> do_begin_run_sig; 
+  emp::Signal<void(void)> do_pop_init_sig;
   emp::Signal<void(void)> do_evaluation_sig;    ///< Specific to run mode. Setup by RUN_MODE/WORLD_MODE setup. 
   emp::Signal<void(void)> do_selection_sig;     ///< Specific to run mode. Setup by RUN_MODE/WORLD_MODE setup.
   emp::Signal<void(void)> do_world_update_sig;  ///< Generic. Setup during general Setup.  
@@ -239,6 +247,23 @@ protected:
   // === Changing environment utility functions ===
   void SaveChgEnvTags();
   void LoadChgEnvTags();
+
+  // === Data collection/tracking functions ===
+  /// Snapshot all programs for current update.
+  void Snapshot_Programs();
+  
+  /// Snapshot population statistics for current update.
+  void Snapshot_PopulationStats();
+  
+  /// Snapshot dominant program performance over many trials (only makes sense in context of EA run). 
+  void Snapshot_Dominant();
+
+  /// Snapshot map from MAP-elites (only makes sense in context of MAP-Elites run). 
+  void Snapshot_MAP();
+
+  /// Add a data file to track dominant program. Will track at same interval as fitness file. (only makes sense in context of EA run).
+  emp::DataFile & AddDominantFile(const std::string & fpath);
+
 
   // === Eval hardware utility functions ===
   void ResetEvalHW() {
@@ -296,10 +321,56 @@ void MapElitesGPWorld::Setup(MapElitesGPConfig & config) {
   SetCache();           // We'll be caching fitness scores
   Init_Configs(config); // Initialize configs
 
+  // Setup 
   do_begin_run_sig.AddAction([this]() {
     // Calculate ranges for phenotypic traits. 
     max_inst_entropy = -1 * emp::Log2(1.0/((double)inst_lib.GetSize())); // Instruction set must be locked in by this point. 
     max_func_entered_entropy = -1 * emp::Log2(1.0/((double)PROG_MAX_FUNC_CNT));
+  });
+
+  // Configure world update signal. 
+  do_world_update_sig.AddAction([this]() {
+    std::cout << "Update: " << GetUpdate() << " Max score: " << best_score << std::endl;
+    // do_pop_snapshot_sig.Trigger();
+    if (update % SNAPSHOT_INTERVAL == 0) do_pop_snapshot_sig.Trigger();
+    Update(); 
+  });
+
+  // Generic evaluation signal actions. 
+  // - At beginning of agent evaluation. 
+  begin_org_eval_sig.AddAction([this](org_t & org) {
+    eval_hw->SetProgram(org.GetProgram());
+  });
+  
+  // Setup evaluation trial signals
+  // - Begin trial
+  begin_org_trial_sig.AddAction([this](org_t & org) {
+    // Reset hardware.
+    ResetEvalHW(); 
+    // Reset phenotype
+    phen_cache.Get(org.GetPos(), trial_id).Reset();
+    // Set org ID in hardware.
+    eval_hw->SetTrait(trait_id_t::ORG_ID, org.GetPos());
+  });
+  // - Do trial
+  do_org_trial_sig.AddAction([this](org_t & org) {
+    for (eval_time = 0; eval_time < EVAL_TIME; ++eval_time) {
+      // 1) Advance environment.
+      do_env_advance_sig.Trigger();
+      // 2) Advance agent.
+      do_org_advance_sig.Trigger(org);
+    }
+  });
+  // - End trial
+  end_org_trial_sig.AddAction([this](org_t & org) {
+    const size_t id = org.GetPos();
+    phenotype_t & phen = phen_cache.Get(id, trial_id); 
+    phen.score = calc_score(org, phen);
+  });
+
+  // Setup organism advance signal. 
+  do_org_advance_sig.AddAction([this](org_t & org) {
+    eval_hw->SingleProcess();
   });
 
   // Setup descriptive functions used by MAP-Elites (and data tracking, etc). 
@@ -331,12 +402,33 @@ void MapElitesGPWorld::Setup(MapElitesGPConfig & config) {
     }
     return total / EVAL_TRIAL_CNT;
   };
+
+  // TODO: check placement stuff w/MAPE
+
+  OnPlacement([this](size_t pos) {
+    org_t & org = GetOrg(pos);
+    org.SetPos(pos);
+  });
   
   Init_Mutator();       // Configure SignalGPMutator, mutation function.
   Init_Hardware();      // Configure SignalGP hardware. 
   Init_Problem();       // Configure problem.
   Init_WorldMode();      // Configure run (MAP-Eltes vs. EA, etc)
-  // - Setup problem
+  
+  #ifndef EMSCRIPTEN
+  // Make a data directory. 
+  mkdir(DATA_DIRECTORY.c_str(), ACCESSPERMS);
+  if (DATA_DIRECTORY.back() != '/') DATA_DIRECTORY += '/';
+
+  // Setup generic snapshots. 
+  do_pop_snapshot_sig.AddAction([this]() { this->Snapshot_Programs(); });
+  do_pop_snapshot_sig.AddAction([this]() { this->Snapshot_PopulationStats(); });
+  
+  // Setup fitness tracking. 
+  SetupFitnessFile(DATA_DIRECTORY + "fitness.csv").SetTimingRepeat(STATISTICS_INTERVAL);
+  
+  #endif
+
   // - Setup data tracking (but only in native mode)
   //    - Pop snapshot
   //    - Fitness file
@@ -344,7 +436,6 @@ void MapElitesGPWorld::Setup(MapElitesGPConfig & config) {
   // - Setup selection
   //   - MAPE vs. EA
   //      - Setup phen cache size
-  // - Init population
 
   // Setup the fitness function
   switch (EVAL_TRIAL_AGG_METHOD) {
@@ -387,75 +478,18 @@ void MapElitesGPWorld::Setup(MapElitesGPConfig & config) {
     }
   }
 
-  // Configure world update signal. 
-  do_world_update_sig.AddAction([this]() {
-    std::cout << "Update: " << GetUpdate() << " Max score: " << best_score << std::endl;
-    if (update % POP_SNAPSHOT_INTERVAL == 0) do_pop_snapshot_sig.Trigger();
-    Update(); 
-  });
-
-  // Generic evaluation signal actions. 
-  // - At beginning of agent evaluation. 
-  begin_org_eval_sig.AddAction([this](org_t & org) {
-    eval_hw->SetProgram(org.GetProgram());
-  });
-  
-  // end_org_eval_sig.AddAction([this](org_t & org) {
-
-  // });
-
   // TODO: depending on problem, spawn core!
-  // Setup evaluation trial signals
-  // - Begin trial
-  begin_org_trial_sig.AddAction([this](org_t & org) {
-    // Reset hardware.
-    ResetEvalHW(); 
-    // Reset phenotype
-    phen_cache.Get(org.GetPos(), trial_id).Reset();
-    // Set org ID in hardware.
-    eval_hw->SetTrait(trait_id_t::ORG_ID, org.GetPos());
-  });
-  // - Do trial
-  do_org_trial_sig.AddAction([this](org_t & org) {
-    for (eval_time = 0; eval_time < EVAL_TIME; ++eval_time) {
-      // 1) Advance environment.
-      do_env_advance_sig.Trigger();
-      // 2) Advance agent.
-      do_org_advance_sig.Trigger(org);
-    }
-  });
-  // - End trial
-  end_org_trial_sig.AddAction([this](org_t & org) {
-    const size_t id = org.GetPos();
-    phenotype_t & phen = phen_cache.Get(id, trial_id); 
-    phen.score = calc_score(org, phen);
-  });
 
-  // Setup organism advance signal. 
-  do_org_advance_sig.AddAction([this](org_t & org) {
-    eval_hw->SingleProcess();
-  });
-
-  // TODO: check placement stuff w/MAPE
-  OnBeforePlacement([this](org_t & org, size_t pos) {
-    org.SetPos(GetSize()); // Indicate that this organism has not been placed yet (useful for MAPE). 
-  });
-
-  OnPlacement([this](size_t pos) {
-    org_t & org = GetOrg(pos);
-    org.SetPos(pos);
-  });
-
-  // Very last thing: initialize the population
+  // Initialize the population
   switch (POP_INIT_METHOD) {
     case (size_t)POP_INIT_METHOD::RANDOM: {
-      do_begin_run_sig.AddAction([this]() {
+      do_pop_init_sig.AddAction([this]() {
         InitPop_Random();
       });
       break;
     }
     case (size_t)POP_INIT_METHOD::ANCESTOR: {
-      do_begin_run_sig.AddAction([this]() {
+      do_pop_init_sig.AddAction([this]() {
         InitPop_Ancestor();
       });
       break;
@@ -480,6 +514,7 @@ void MapElitesGPWorld::Init_Configs(MapElitesGPConfig & config) {
   EVAL_TIME = config.EVAL_TIME();
 
   SELECTION_METHOD = config.SELECTION_METHOD();
+  ELITE_CNT = config.ELITE_CNT();
   TOURNAMENT_SIZE = config.TOURNAMENT_SIZE();
 
   USE_MAPE_AXIS__INST_ENTROPY = config.USE_MAPE_AXIS__INST_ENTROPY();
@@ -527,7 +562,9 @@ void MapElitesGPWorld::Init_Configs(MapElitesGPConfig & config) {
   HW_MAX_CALL_DEPTH = config.HW_MAX_CALL_DEPTH();
   HW_MIN_TAG_SIMILARITY_THRESH = config.HW_MIN_TAG_SIMILARITY_THRESH();
 
-  POP_SNAPSHOT_INTERVAL = config.POP_SNAPSHOT_INTERVAL();
+  DATA_DIRECTORY = config.DATA_DIRECTORY();
+  STATISTICS_INTERVAL = config.STATISTICS_INTERVAL();
+  SNAPSHOT_INTERVAL = config.SNAPSHOT_INTERVAL();
 
   // Verify any config constraints
   if (EVAL_TRIAL_CNT < 1) {
@@ -574,7 +611,7 @@ void MapElitesGPWorld::Init_Mutator() {
     }
     return mut_cnt;
   });
-  SetAutoMutate(); // Mutations will occur before deciding where a new organism is placed. 
+  // TODO: get rid of elite select version of this function for MAPE
 }
 
 void MapElitesGPWorld::Init_Hardware() {
@@ -707,7 +744,7 @@ void MapElitesGPWorld::SetupProblem_ChgEnv() {
   // Setup env advance signal action.
   // - Setup environment state changing
   switch (ENV_CHG_METHOD) {
-    case (size_t)ENV_CHG_METHOD::PROB: {
+    case (size_t)ENV_CHG_METHOD::SHUFFLE: {
       do_env_advance_sig.AddAction([this]() {
         ChgEnvProblemInfo & env = chgenv_info;
         if (env.env_state == (size_t)-1 || random_ptr->P(ENV_CHG_PROB)) {
@@ -739,6 +776,19 @@ void MapElitesGPWorld::SetupProblem_ChgEnv() {
             env.env_shuffle_id = 0;
             emp::Shuffle(*random_ptr, env.env_shuffler);
           }
+          // 2) Trigger environment state event.
+          eval_hw->TriggerEvent("EnvSignal", env.env_state_tags[env.env_state]);
+        }
+      });
+      break;
+    }
+    case (size_t)ENV_CHG_METHOD::RAND: {
+      do_env_advance_sig.AddAction([this]() {
+        ChgEnvProblemInfo & env = chgenv_info;
+        if (env.env_state == (size_t)-1 || random_ptr->P(ENV_CHG_PROB)) {
+          // Trigger change!
+          // What state should we switch to?
+          env.env_state = random_ptr->GetUInt(ENV_STATE_CNT);
           // 2) Trigger environment state event.
           eval_hw->TriggerEvent("EnvSignal", env.env_state_tags[env.env_state]);
         }
@@ -783,8 +833,8 @@ void MapElitesGPWorld::SetupProblem_ChgEnv() {
   for (size_t i = 0; i < ENV_STATE_CNT; ++i) {
     inst_lib.AddInst("SetState-" + emp::to_string(i),
       [i](hardware_t & hw, const inst_t & inst) {
-        hw.SetTrait(org_t::HW_TRAIT_ID::ORG_STATE, i);
-      }, 0, "Set internal state to " + emp::to_string(i));
+        hw.SetTrait(trait_id_t::ORG_STATE, i);
+     }, 0, "Set internal state to " + emp::to_string(i));
   }
 
   // Add events!
@@ -817,12 +867,17 @@ void MapElitesGPWorld::SetupProblem_Testcases() {
 }
 
 void MapElitesGPWorld::SetupWorldMode_EA() {
+  
+  SetPopStruct_Mixed(true);
+  SetAutoMutate([this](size_t pos){ return pos > ELITE_CNT; }); // Mutations will occur before deciding where a new organism is placed. 
+  
+  std::cout << "Configuring world mode: standard evolutionary algorithm" << std::endl;
   // do_evaluation_sig
   do_evaluation_sig.AddAction([this]() {
     // Evaluate e'rybody! 
     for (size_t id = 0; id < GetSize(); ++id) {
       org_t & org = GetOrg(id);
-      // org.SetPos(id); // TODO: confirm org position!
+      org.SetPos(id);
       Evaluate(org);
       double fitness = CalcFitnessOrg(org);
       if (fitness > best_score || id == 0) { best_score = fitness; dominant_id = id; }
@@ -833,7 +888,8 @@ void MapElitesGPWorld::SetupWorldMode_EA() {
   switch (SELECTION_METHOD) {
     case (size_t)SELECTION_METHOD::TOURNAMENT: {
       do_selection_sig.AddAction([this]() {
-        emp::TournamentSelect(*this, TOURNAMENT_SIZE, POP_SIZE);
+        if (ELITE_CNT) emp::EliteSelect(*this, ELITE_CNT, 1);
+        emp::TournamentSelect(*this, TOURNAMENT_SIZE, POP_SIZE-ELITE_CNT);
       });
       break;
     }
@@ -847,6 +903,15 @@ void MapElitesGPWorld::SetupWorldMode_EA() {
     return agg_scores(org);
   });
 
+  // EA-specific data tracking
+  #ifndef EMSCRIPTEN
+  // Setup dominant snapshotting.
+  do_pop_snapshot_sig.AddAction([this]() { Snapshot_Dominant(); }); 
+
+  // Add dominant file. 
+  // AddDominantFile(DATA_DIRECTORY + "dominant.csv").SetTimingRepeat(STATISTICS_INTERVAL);
+  #endif
+
     // One of last things to do before run: resize phenotype cache
   do_begin_run_sig.AddAction([this]() {
     std::cout << "Resizing the phenotype cache(" << POP_SIZE << ")!" << std::endl;
@@ -857,7 +922,9 @@ void MapElitesGPWorld::SetupWorldMode_EA() {
 
 void MapElitesGPWorld::SetupWorldMode_MAPE() {
   std::cout << "Configuring world mode: MAPE" << std::endl;
-  // TODO
+
+  SetAutoMutate();
+
   // do_evaluation_sig
   do_evaluation_sig.AddAction([this]() {
     best_score = MIN_POSSIBLE_SCORE;
@@ -865,10 +932,13 @@ void MapElitesGPWorld::SetupWorldMode_MAPE() {
 
   // do_selection_sig
   do_selection_sig.AddAction([this]() {
-    std::cout << "Doing selection?" << std::endl;
     emp::RandomSelect(*this, POP_SIZE);
   });
   
+  OnBeforePlacement([this](org_t & org, size_t pos) {
+    org.SetPos(GetSize()); // Indicate that this organism has not been placed yet (useful for MAPE). 
+  });
+
   // Setup fitness function
   SetFitFun([this](org_t & org) {
     // const size_t id = GetSize();
@@ -878,10 +948,15 @@ void MapElitesGPWorld::SetupWorldMode_MAPE() {
     Evaluate(org);
     // Grab score
     const double score = agg_scores(org);
-    std::cout << "Score!: " << score << std::endl;
     if (score > best_score) { best_score = score; }
     return score;
+    
   });
+
+  // MAPE-specific data tracking
+  #ifndef EMSCRIPTEN
+  do_pop_snapshot_sig.AddAction([this]() { Snapshot_MAP(); }); 
+  #endif
 
   // Setup traits
   do_begin_run_sig.AddAction([this](){
@@ -917,12 +992,17 @@ void MapElitesGPWorld::SetupWorldMode_MAPE() {
       AddPhenotype("FunctionsEnteredEntropy", func_entered_ent_fun, 0.0, max_func_entered_entropy);
       trait_bin_sizes.emplace_back(MAPE_AXIS_SIZE__FUNC_ENTERED_ENTROPY);
     }
+    emp::SetMapElites(*this, trait_bin_sizes);
   });
 
   // One of last things to do before run: resize phenotype cache
   do_begin_run_sig.AddAction([this]() {
     std::cout << "Resizing the phenotype cache (" << GetSize() + 1 << ")!" << std::endl;
     phen_cache.Resize(GetSize() + 1, EVAL_TRIAL_CNT); // Add one position as temp position for MAP-elites
+  });
+
+  do_world_update_sig.AddAction([this]() {
+    ClearCache();
   });
 
 }
@@ -934,6 +1014,7 @@ void MapElitesGPWorld::Run() {
       // EA-mode does the same thing as MAPE-mode during a run. (we leave the break out and drop into MAPE case)
     case (size_t)WORLD_MODE::MAPE: {
       do_begin_run_sig.Trigger();
+      do_pop_init_sig.Trigger();
       for (size_t u = 0; u <= GENERATIONS; ++u) {
         RunStep();
       }
@@ -947,6 +1028,7 @@ void MapElitesGPWorld::Run() {
 }
 
 void MapElitesGPWorld::RunStep() {
+  // could move these onto OnUpdate signal
   do_evaluation_sig.Trigger();
   do_selection_sig.Trigger();
   do_world_update_sig.Trigger();
@@ -1055,5 +1137,42 @@ void MapElitesGPWorld::InitPop_Ancestor() {
   genome_t ancestor_genome(ancestor_prog, HW_MIN_TAG_SIMILARITY_THRESH);
   Inject(ancestor_genome, POP_SIZE);    // Inject population!
 }
+
+// === Functions to track/record data ===
+/// Snapshot all programs for current update.
+void MapElitesGPWorld::Snapshot_Programs() {
+  std::string snapshot_dir = DATA_DIRECTORY + "pop_" + emp::to_string(GetUpdate());
+  mkdir(snapshot_dir.c_str(), ACCESSPERMS);
+  // For each program in the population, dump the full program description in a single file.
+  std::ofstream prog_ofstream(snapshot_dir + "/pop_" + emp::to_string(GetUpdate()) + ".pop");
+  for (size_t i = 0; i < GetSize(); ++i) {
+    if (!IsOccupied(i)) continue;
+    prog_ofstream << "==={id:" << i << ",fitness:" << CalcFitnessID(i) << ",sim_thresh:" << GetOrg(i).GetTagSimilarityThreshold() << "}===\n";
+    org_t & org = GetOrg(i);
+    org.GetProgram().PrintProgramFull(prog_ofstream);
+  }
+  prog_ofstream.close();
+}
+
+/// Snapshot population statistics for current update.
+void MapElitesGPWorld::Snapshot_PopulationStats() {
+  // TODO: this
+}
+
+/// Snapshot dominant program performance over many trials (only makes sense in context of EA run). 
+void MapElitesGPWorld::Snapshot_Dominant() {
+  // TODO: this
+}
+
+/// Snapshot map from MAP-elites (only makes sense in context of MAP-Elites run). 
+void MapElitesGPWorld::Snapshot_MAP(void) {
+  // TODO: this
+}
+
+/// Add a data file to track dominant program. Will track at same interval as fitness file. (only makes sense in context of EA run).
+emp::DataFile & MapElitesGPWorld::AddDominantFile(const std::string & fpath) {
+  // TODO: this
+}
+
 
 #endif

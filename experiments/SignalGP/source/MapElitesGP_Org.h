@@ -34,8 +34,8 @@ public:
     double tag_sim_thresh;
 
     Genome(const program_t & _p, double _s=0) : program(_p), tag_sim_thresh(_s) { ; }
-    Genome(Genome && in)=default;
-    Genome(const Genome & in)=default;
+    Genome(Genome && in) : program(in.program), tag_sim_thresh(in.tag_sim_thresh) { ; }
+    Genome(const Genome & in) : program(in.program), tag_sim_thresh(in.tag_sim_thresh) { ; }
   };
 
 protected:
@@ -50,18 +50,22 @@ protected:
     double inst_cnt; 
 
     GenomeInfo() : calculated(false), inst_entropy(0), inst_cnt(0) { ; }
+    GenomeInfo(GenomeInfo && in) : calculated(in.calculated), inst_entropy(in.inst_entropy), inst_cnt(in.inst_cnt) { ; }
+    GenomeInfo(const GenomeInfo & in) : calculated(in.calculated), inst_entropy(in.inst_entropy), inst_cnt(in.inst_cnt) { ; }
+
   } genome_info;
 
 public:
   MapElitesGPOrg(const genome_t & _g) : pos(0), genome(_g), genome_info() { ; }
-  MapElitesGPOrg(const MapElitesGPOrg &) = default;
-  MapElitesGPOrg(MapElitesGPOrg &&) = default;
+  MapElitesGPOrg(const MapElitesGPOrg & in) : pos(in.pos), genome(in.genome), genome_info(in.genome_info) { ; }
+  MapElitesGPOrg(MapElitesGPOrg && in) : pos(in.pos), genome(in.genome), genome_info(in.genome_info) { ; }
 
   size_t GetPos() const { return pos; }
   void SetPos(size_t id) { pos = id; }
 
   genome_t & GetGenome() { return genome; }
   program_t & GetProgram() { return genome.program; }
+  double GetTagSimilarityThreshold() const { return genome.tag_sim_thresh; }
 
   void ResetGenomeInfo() { genome_info.calculated = false; }
   
