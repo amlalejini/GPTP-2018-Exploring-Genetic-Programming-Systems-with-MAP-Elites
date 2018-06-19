@@ -36,7 +36,6 @@
 #include "PhenotypeCache.h"
 
 // Major TODOS: 
-// - [ ] Add data tracking (snapshots, fitness, dominant, etc)
 // - [ ] Add logic 9 problem 
 // - [ ] Add testcase problems
 // - [ ] Testing/debugging
@@ -183,8 +182,17 @@ protected:
   size_t eval_time;
   size_t trial_id;
 
+  emp::vector<size_t> trait_bin_sizes;
   double max_inst_entropy; 
   double max_func_entered_entropy; 
+
+  struct PhenTraitInfo {
+    size_t id;
+    std::string name;
+    std::string desc;
+    PhenTraitInfo(size_t _id, std::string _name, std::string _desc="") : id(_id), name(_name), desc(_desc) { ; }
+  };
+  emp::vector<PhenTraitInfo> phen_traits;
 
   double best_score;
   size_t dominant_id; 
@@ -350,6 +358,46 @@ void MapElitesGPWorld::Setup(MapElitesGPConfig & config) {
     // Calculate ranges for phenotypic traits. 
     max_inst_entropy = -1 * emp::Log2(1.0/((double)inst_lib.GetSize())); // Instruction set must be locked in by this point. 
     max_func_entered_entropy = -1 * emp::Log2(1.0/((double)PROG_MAX_FUNC_CNT));
+    
+    // Add phenotypic traits. 
+    if (USE_MAPE_AXIS__INST_ENTROPY) {
+      std::cout << "Configuring instruction entropy axis" << std::endl;
+      phen_traits.emplace_back(GetPhenotypes().GetSize(), "InstructionEntropy");
+      AddPhenotype("InstructionEntropy", inst_ent_fun, 0.0, max_inst_entropy + 0.1); 
+      trait_bin_sizes.emplace_back(MAPE_AXIS_SIZE__INST_ENTROPY);
+    }
+    if (USE_MAPE_AXIS__INST_CNT) {
+      std::cout << "Configuring instruction count axis" << std::endl;
+      phen_traits.emplace_back(GetPhenotypes().GetSize(), "InstructionCnt");
+      AddPhenotype("InstructionCnt", inst_cnt_fun, 0, (int)PROG_MAX_TOTAL_LEN);
+      trait_bin_sizes.emplace_back(PROG_MAX_TOTAL_LEN+1);
+    }
+    if (USE_MAPE_AXIS__FUNC_USED) {
+      std::cout << "Configuring functions used axis" << std::endl;
+      phen_traits.emplace_back(GetPhenotypes().GetSize(), "FunctionsUsed");
+      AddPhenotype("FunctionsUsed", func_used_fun, 0, PROG_MAX_FUNC_CNT+1);
+      trait_bin_sizes.emplace_back(PROG_MAX_FUNC_CNT+1);
+    }
+    if (USE_MAPE_AXIS__FUNC_CNT) {
+      std::cout << "Configuring function count axis" << std::endl;
+      phen_traits.emplace_back(GetPhenotypes().GetSize(), "FunctionCnt");
+      AddPhenotype("FunctionCnt", func_cnt_fun, 0, (int)PROG_MAX_FUNC_CNT+1);
+      trait_bin_sizes.emplace_back(PROG_MAX_FUNC_CNT+1);
+    }
+    if (USE_MAPE_AXIS__FUNC_ENTERED) {
+      std::cout << "Configuring functions entered axis" << std::endl;
+      phen_traits.emplace_back(GetPhenotypes().GetSize(), "FunctionsEntered");
+      AddPhenotype("FunctionsEntered", func_entered_cnt_fun, 0, (EVAL_TIME * HW_MAX_THREAD_CNT)+1);
+      trait_bin_sizes.emplace_back((EVAL_TIME * HW_MAX_THREAD_CNT)+1);
+
+    }
+    if (USE_MAPE_AXIS__FUNC_ENTERED_ENTROPY) {
+      std::cout << "Configuring functions entered entropy axis" << std::endl;
+      phen_traits.emplace_back(GetPhenotypes().GetSize(), "FunctionsEnteredEntropy");
+      AddPhenotype("FunctionsEnteredEntropy", func_entered_ent_fun, 0.0, max_func_entered_entropy);
+      trait_bin_sizes.emplace_back(MAPE_AXIS_SIZE__FUNC_ENTERED_ENTROPY);
+    }
+
   });
 
   // Configure world update signal. 
@@ -464,6 +512,16 @@ void MapElitesGPWorld::Setup(MapElitesGPConfig & config) {
   pop_snapshot_stats.emplace_back("func_entered", [this]() { return func_entered_cnt_fun(GetOrg(pop_snapshot_info.cur_org_id)); }, "");
   pop_snapshot_stats.emplace_back("func_entered_entropy", [this]() { return func_entered_ent_fun(GetOrg(pop_snapshot_info.cur_org_id)); }, "");
   
+  do_begin_run_sig.AddAction([this]() {
+    // for each phenotype, add pop snapshot stats thing
+    for (size_t i = 0; i < phen_traits.size(); ++i) {
+      pop_snapshot_stats.emplace_back(phen_traits[i].name + "__bin", 
+        [this, i]() { 
+          return GetPhenotypes()[phen_traits[i].id].EvalBin(GetOrg(pop_snapshot_info.cur_org_id), trait_bin_sizes[phen_traits[i].id]); 
+        }, phen_traits[i].desc); 
+    }
+  });
+
   #endif
 
   // - Setup data tracking (but only in native mode)
@@ -514,8 +572,6 @@ void MapElitesGPWorld::Setup(MapElitesGPConfig & config) {
       exit(-1);
     }
   }
-
-  // TODO: depending on problem, spawn core!
 
   // Initialize the population
   switch (POP_INIT_METHOD) {
@@ -905,7 +961,7 @@ void MapElitesGPWorld::SetupProblem_ChgEnv() {
 }
 
 void MapElitesGPWorld::SetupProblem_Testcases() {
-  // TODO
+  
 }
 
 void MapElitesGPWorld::SetupWorldMode_EA() {
@@ -962,11 +1018,22 @@ void MapElitesGPWorld::SetupWorldMode_EA() {
   dom_file_stats.emplace_back("func_entered", [this]() { return func_entered_cnt_fun(GetOrg(dominant_id)); }, "Count of functions entered/called by dominant organism.");
   dom_file_stats.emplace_back("func_entered_entropy", [this]() { return func_entered_ent_fun(GetOrg(dominant_id)); }, "Functions entered entropy for dominant organism");
 
-  // Add dominant file. 
-  AddDominantFile(DATA_DIRECTORY + "/dominant.csv").SetTimingRepeat(STATISTICS_INTERVAL);
+  do_begin_run_sig.AddAction([this]() {
+    // for each phenotype, add pop snapshot stats thing
+    for (size_t i = 0; i < phen_traits.size(); ++i) {
+      dom_file_stats.emplace_back(phen_traits[i].name + "__bin", 
+        [this, i]() { 
+          return GetPhenotypes()[phen_traits[i].id].EvalBin(GetOrg(dominant_id), trait_bin_sizes[phen_traits[i].id]); 
+        }, phen_traits[i].desc); 
+    }
+    // Add dominant file. 
+    AddDominantFile(DATA_DIRECTORY + "/dominant.csv").SetTimingRepeat(STATISTICS_INTERVAL);
+  });
+  
+  
   #endif
 
-    // One of last things to do before run: resize phenotype cache
+  // One of last things to do before run: resize phenotype cache
   do_begin_run_sig.AddAction([this]() {
     std::cout << "Resizing the phenotype cache(" << POP_SIZE << ")!" << std::endl;
     phen_cache.Resize(POP_SIZE+1, EVAL_TRIAL_CNT); // Add one position as temp position for MAP-elites
@@ -1013,44 +1080,12 @@ void MapElitesGPWorld::SetupWorldMode_MAPE() {
   #endif
 
   // Setup traits
-  do_begin_run_sig.AddAction([this](){
-    emp::vector<size_t> trait_bin_sizes;
-    if (USE_MAPE_AXIS__INST_ENTROPY) {
-      std::cout << "Configuring instruction entropy axis" << std::endl;
-      AddPhenotype("InstructionEntropy", inst_ent_fun, 0.0, max_inst_entropy + 0.1); 
-      trait_bin_sizes.emplace_back(MAPE_AXIS_SIZE__INST_ENTROPY);
-    }
-    if (USE_MAPE_AXIS__INST_CNT) {
-      std::cout << "Configuring instruction count axis" << std::endl;
-      AddPhenotype("InstructionCnt", inst_cnt_fun, 0, (int)PROG_MAX_TOTAL_LEN);
-      trait_bin_sizes.emplace_back(PROG_MAX_TOTAL_LEN+1);
-    }
-    if (USE_MAPE_AXIS__FUNC_USED) {
-      std::cout << "Configuring functions used axis" << std::endl;
-      AddPhenotype("FunctionsUsed", func_used_fun, 0, PROG_MAX_FUNC_CNT+1);
-      trait_bin_sizes.emplace_back(PROG_MAX_FUNC_CNT+1);
-    }
-    if (USE_MAPE_AXIS__FUNC_CNT) {
-      std::cout << "Configuring function count axis" << std::endl;
-      AddPhenotype("FunctionCnt", func_cnt_fun, 0, (int)PROG_MAX_FUNC_CNT+1);
-      trait_bin_sizes.emplace_back(PROG_MAX_FUNC_CNT+1);
-    }
-    if (USE_MAPE_AXIS__FUNC_ENTERED) {
-      std::cout << "Configuring functions entered axis" << std::endl;
-      AddPhenotype("FunctionsEntered", func_entered_cnt_fun, 0, (EVAL_TIME * HW_MAX_THREAD_CNT)+1);
-      trait_bin_sizes.emplace_back((EVAL_TIME * HW_MAX_THREAD_CNT)+1);
 
-    }
-    if (USE_MAPE_AXIS__FUNC_ENTERED_ENTROPY) {
-      std::cout << "Configuring functions entered entropy axis" << std::endl;
-      AddPhenotype("FunctionsEnteredEntropy", func_entered_ent_fun, 0.0, max_func_entered_entropy);
-      trait_bin_sizes.emplace_back(MAPE_AXIS_SIZE__FUNC_ENTERED_ENTROPY);
-    }
-    emp::SetMapElites(*this, trait_bin_sizes);
-  });
+
 
   // One of last things to do before run: resize phenotype cache
   do_begin_run_sig.AddAction([this]() {
+    emp::SetMapElites(*this, trait_bin_sizes);
     std::cout << "Resizing the phenotype cache (" << GetSize() + 1 << ")!" << std::endl;
     phen_cache.Resize(GetSize() + 1, EVAL_TRIAL_CNT); // Add one position as temp position for MAP-elites
   });
