@@ -33,12 +33,17 @@
 #include "MapElitesGP_Org.h"
 #include "MapElitesGP_World.h"
 
+#include "TestcaseSet.h"
+#include "TaskSet.h"
+
 #include "PhenotypeCache.h"
 
 // Major TODOS: 
 // - [ ] Add logic 9 problem 
 // - [ ] Add testcase problems
+//      - [ ] Cleanup
 // - [ ] Testing/debugging
+// - [ ] Documentation
 
 class MapElitesGPWorld : public emp::World<MapElitesGPOrg> {
 public:
@@ -64,7 +69,10 @@ public:
   using event_t = typename hardware_t::event_t;
   using state_t = typename hardware_t::State;
   using tag_t = typename hardware_t::affinity_t;
+  using memory_t = typename hardware_t::memory_t;
+
   using trait_id_t = typename org_t::HW_TRAIT_ID;
+
 
   using mut_fun_t = std::function<size_t(org_t &, emp::Random &)>;
   using score_fun_t = std::function<double(org_t &, phenotype_t &)>;
@@ -78,16 +86,20 @@ public:
     // For changing environment problem
     double env_match_score;
 
+    // For testcase problems
+    emp::vector<double> testcase_results;
+
     // For logic 9 problem
-    // TODO
-    // For testcases problem
     // TODO
 
     void Reset() {
       score = 0;
-      env_match_score = 0;
       function_entries.clear();
       functions_used_set.clear();
+
+      env_match_score = 0;
+
+      testcase_results.clear();
     }
   };
 
@@ -131,6 +143,8 @@ protected:
   double ENV_CHG_PROB;
   size_t ENV_CHG_RATE;
   bool ENV_SENSORS;
+  // == Testcase problem group ==
+  size_t NUM_TEST_CASES;
   // == Program constraints group ==
   size_t PROG_MIN_FUNC_CNT;
   size_t PROG_MAX_FUNC_CNT;
@@ -168,6 +182,8 @@ protected:
 
   emp::Ptr<hardware_t> eval_hw;
 
+  TestcaseSet<int, double> testcases;
+
   PhenotypeCache<OrgPhenotype> phen_cache;  // NOTE: cache is not necessarily accurate for everyone in pop during MAPE
   score_fun_t calc_score;
   std::function<double(org_t &)> agg_scores;
@@ -181,6 +197,8 @@ protected:
 
   size_t eval_time;
   size_t trial_id;
+  double best_score;
+  size_t dominant_id; 
 
   emp::vector<size_t> trait_bin_sizes;
   double max_inst_entropy; 
@@ -194,10 +212,6 @@ protected:
   };
   emp::vector<PhenTraitInfo> phen_traits;
 
-  double best_score;
-  size_t dominant_id; 
-
-  // TODO: can I get MAP-Elites x,y position?
   /// Bundles statistic about population (used by pop stats snapshot)
   /// - name
   /// - calc
@@ -209,16 +223,13 @@ protected:
     std::string desc;
     PopStat(const std::string & n, const stat_fun_t & f, const std::string & d="") : name(n), fun(f), desc(d) { ; }
   };
-  
-  struct PopStatsInfo {
-    size_t cur_org_id;
-
-  } pop_snapshot_info;
-
   emp::vector<PopStat> pop_snapshot_stats;
-
   emp::vector<PopStat> dom_file_stats;
 
+  struct PopStatsInfo {
+    size_t cur_org_id;
+  } pop_snapshot_info;
+  
   // == Problem-specific world info ==
   /// World info relevant to changing environment problem. 
   struct ChgEnvProblemInfo {
@@ -304,6 +315,7 @@ protected:
     eval_hw->SetTrait(trait_id_t::ORG_ID, -1);
     eval_hw->SetTrait(trait_id_t::PROBLEM_OUTPUT, -1);
     eval_hw->SetTrait(trait_id_t::ORG_STATE, -1);
+    eval_hw->SetTrait(trait_id_t::OUTPUT_SET, 0);
   }
 
   // === Evaluation functions ===
@@ -406,6 +418,7 @@ void MapElitesGPWorld::Setup(MapElitesGPConfig & config) {
     // do_pop_snapshot_sig.Trigger();
     if (update % SNAPSHOT_INTERVAL == 0) do_pop_snapshot_sig.Trigger();
     Update(); 
+    ClearCache();
   });
 
   // Generic evaluation signal actions. 
@@ -632,6 +645,8 @@ void MapElitesGPWorld::Init_Configs(MapElitesGPConfig & config) {
   ENV_CHG_PROB = config.ENV_CHG_PROB();
   ENV_CHG_RATE = config.ENV_CHG_RATE();
   ENV_SENSORS = config.ENV_SENSORS();
+
+  NUM_TEST_CASES = config.NUM_TEST_CASES();
 
   PROG_MIN_FUNC_CNT = config.PROG_MIN_FUNC_CNT();
   PROG_MAX_FUNC_CNT = config.PROG_MAX_FUNC_CNT();
@@ -961,7 +976,74 @@ void MapElitesGPWorld::SetupProblem_ChgEnv() {
 }
 
 void MapElitesGPWorld::SetupProblem_Testcases() {
+  // TODO: fix warnings!
+  testcases.LoadTestcases(TESTCASES_FPATH);
+  std::cout << "Loaded test cases (" << testcases.GetTestcases().size() << ") from: " << TESTCASES_FPATH << std::endl;
+  emp_assert(NUM_TEST_CASES <= testcases.GetTestcases().size());
+
+  // Setup fitness stuff
+  // do_begin_eval
+  //  begin_trial: reset hardware
+  //  - TODO: spawn core (main) w/appropriate input
+  begin_org_trial_sig.Clear();
+  do_org_trial_sig.Clear();
+
+  begin_org_trial_sig.AddAction([this](org_t & org) {
+    // Reset phenotype
+    phen_cache.Get(org.GetPos(), trial_id).Reset();
+  });
   
+  do_org_trial_sig.AddAction([this](org_t & org) {
+    // TODO: pick random subset of testcases
+    for (size_t testcase = 0; testcase < NUM_TEST_CASES; ++testcase) {
+      ResetEvalHW();
+      eval_hw->SetTrait(trait_id_t::ORG_ID, org.GetPos());
+      // Fill out input memory with testcase info. 
+      memory_t input_mem;
+      for (size_t i = 0; i < testcases[testcase].first.size(); ++i) {
+        input_mem[i] = testcases[testcase].first[i];
+      }
+      // Spawn main core!
+      eval_hw->SpawnCore(tag_t(), 0.0, input_mem, true);
+
+      // Process!
+      for (eval_time = 0; eval_time < EVAL_TIME; ++eval_time) {
+        // Advance agent.
+        do_org_advance_sig.Trigger(org);
+      }
+
+      // Check output
+      double output = eval_hw->GetTrait(trait_id_t::PROBLEM_OUTPUT);
+      bool output_set = (bool)eval_hw->GetTrait(trait_id_t::OUTPUT_SET);
+
+      double result = 0;
+      if (output_set) {
+        int divisor = testcases[testcase].second;
+        if (divisor == 0) divisor = 1;
+        result = 1 / (std::abs(output - testcases[testcase].second)/divisor);
+      }
+      if (result > 1000) result = 1000;
+
+      phenotype_t & phen = phen_cache.Get(org.GetPos(), trial_id);
+      phen.testcase_results.emplace_back(result);
+    }
+  });
+
+  calc_score = [](org_t & org, phenotype_t & phen) {
+    return emp::Sum(phen.testcase_results);
+  };
+  
+  // Setup extra instructions
+  // - Submit
+  inst_lib.AddInst("SubmitResult", 
+    [this](hardware_t & hw, const inst_t & inst) {
+      state_t & state = hw.GetCurState();
+      hw.SetTrait(trait_id_t::PROBLEM_OUTPUT, state.GetLocal(inst.args[0]));
+      hw.SetTrait(trait_id_t::OUTPUT_SET, 1);
+    }, 1, "Submit output for given input.");
+  // TODO: load input
+  // TODO: deref
+
 }
 
 void MapElitesGPWorld::SetupWorldMode_EA() {
@@ -1088,10 +1170,6 @@ void MapElitesGPWorld::SetupWorldMode_MAPE() {
     emp::SetMapElites(*this, trait_bin_sizes);
     std::cout << "Resizing the phenotype cache (" << GetSize() + 1 << ")!" << std::endl;
     phen_cache.Resize(GetSize() + 1, EVAL_TRIAL_CNT); // Add one position as temp position for MAP-elites
-  });
-
-  do_world_update_sig.AddAction([this]() {
-    ClearCache();
   });
 
 }

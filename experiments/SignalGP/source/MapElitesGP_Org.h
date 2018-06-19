@@ -27,7 +27,7 @@ public:
   /// Hardware trait indexes.                               
   ///   - ORG_STATE - Used to track organism state for changing environment problem.
   ///   - PROBLEM_OUTPUT - used to track organism's output to a problem.                              ///
-  enum HW_TRAIT_ID { ORG_ID=0, PROBLEM_OUTPUT=1, ORG_STATE=2 }; 
+  enum HW_TRAIT_ID { ORG_ID=0, PROBLEM_OUTPUT=1, ORG_STATE=2, OUTPUT_SET=3 }; 
 
   struct Genome {
     program_t program;

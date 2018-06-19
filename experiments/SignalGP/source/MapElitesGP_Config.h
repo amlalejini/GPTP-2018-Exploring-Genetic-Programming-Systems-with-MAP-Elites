@@ -34,7 +34,7 @@ EMP_BUILD_CONFIG( MapElitesGPConfig,
 
   GROUP(PROBLEM, "Settings related to the problem we're evolving programs to solve."),
   VALUE(PROBLEM_TYPE, size_t, 0, "What problem are we solving? \n0: Changing environment problem \n1: Testcase problem (requires TESTCASES_FPATH setting)"),
-  VALUE(TESTCASES_FPATH, std::string, "testcases-squares.csv", "Where is the file containing testcases for the problem we're solving?"),
+  VALUE(TESTCASES_FPATH, std::string, "testcases/examples-squares.csv", "Where is the file containing testcases for the problem we're solving?"),
 
   GROUP(CHG_ENV_PROBLEM, "Settings specific to the changing environment problem"),
   VALUE(ENV_TAG_GEN_METHOD, size_t, 0, "How should we generate environment tags (true and distraction)? \n0: Randomly\n1: Load from file (ENV_TAG_FPATH)"),
@@ -47,6 +47,9 @@ EMP_BUILD_CONFIG( MapElitesGPConfig,
   VALUE(ENV_CHG_PROB, double, 0.125, "With what probability should the environment change (only relevant when ENV_CHG_METHOD = 0)?"),
   VALUE(ENV_CHG_RATE, size_t, 16, "How often should the environment change (only relevant when ENV_CHG_METHOD = 1)?"),
   VALUE(ENV_SENSORS, bool, false, "Should we include active-polling environment sensors in the instruction set?"),
+
+  GROUP(TESTCASES_PROBLEM, "Settings specific to test case problems."),
+  VALUE(NUM_TEST_CASES, size_t, 10, "How many test cases should we use when evaluating an organism?"), 
 
   GROUP(PROGRAM_CONSTRAINTS, "SignalGP program constraits that mutation operators/initialization will respect."),
   VALUE(PROG_MIN_FUNC_CNT, size_t, 1, "Minimum number of functions mutations are allowed to reduce a SignalGP program to."),
