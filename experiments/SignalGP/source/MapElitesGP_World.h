@@ -91,7 +91,7 @@ public:
       functions_used_set.clear();
     }
   };
-  
+
 protected:
   // Localized configurable parameters
   // == General Group ==
@@ -158,6 +158,8 @@ protected:
   std::string DATA_DIRECTORY;
   size_t STATISTICS_INTERVAL;
   size_t SNAPSHOT_INTERVAL;
+  size_t DOM_SNAPSHOT_TRIAL_CNT;
+  size_t MAP_SNAPSHOT_TRIAL_CNT;
 
   emp::SignalGPMutator<org_t::TAG_WIDTH> mutator;
   emp::vector<mut_fun_t> mut_funs;
@@ -181,11 +183,33 @@ protected:
   size_t eval_time;
   size_t trial_id;
 
-  double max_inst_entropy; // TODO: calculate after all instructions have been added to instruction set
+  double max_inst_entropy; 
   double max_func_entered_entropy; 
 
   double best_score;
   size_t dominant_id; 
+
+  // TODO: can I get MAP-Elites x,y position?
+  /// Bundles statistic about population (used by pop stats snapshot)
+  /// - name
+  /// - calc
+  /// - desc
+  struct PopStat {
+    using stat_fun_t = std::function<double(void)>;
+    std::string name;
+    stat_fun_t fun;
+    std::string desc;
+    PopStat(const std::string & n, const stat_fun_t & f, const std::string & d="") : name(n), fun(f), desc(d) { ; }
+  };
+  
+  struct PopStatsInfo {
+    size_t cur_org_id;
+
+  } pop_snapshot_info;
+
+  emp::vector<PopStat> pop_snapshot_stats;
+
+  emp::vector<PopStat> dom_file_stats;
 
   // == Problem-specific world info ==
   /// World info relevant to changing environment problem. 
@@ -340,6 +364,7 @@ void MapElitesGPWorld::Setup(MapElitesGPConfig & config) {
   // - At beginning of agent evaluation. 
   begin_org_eval_sig.AddAction([this](org_t & org) {
     eval_hw->SetProgram(org.GetProgram());
+    pop_snapshot_info.cur_org_id = org.GetPos();
   });
   
   // Setup evaluation trial signals
@@ -426,6 +451,18 @@ void MapElitesGPWorld::Setup(MapElitesGPConfig & config) {
   
   // Setup fitness tracking. 
   SetupFitnessFile(DATA_DIRECTORY + "fitness.csv").SetTimingRepeat(STATISTICS_INTERVAL);
+
+  // Setup population statistics TODO: fill out descriptions
+  pop_snapshot_stats.emplace_back("update", [this]() { return GetUpdate(); }, "Current world update (generation).");  
+  pop_snapshot_stats.emplace_back("id", [this]() { return pop_snapshot_info.cur_org_id; }, "World ID of organism.");
+  pop_snapshot_stats.emplace_back("fitness", [this]() { return agg_scores(GetOrg(pop_snapshot_info.cur_org_id)); }, "Fitness of organism (in context of problem).");
+  pop_snapshot_stats.emplace_back("tag_sim_thresh", [this]() { return GetOrg(pop_snapshot_info.cur_org_id).GetTagSimilarityThreshold(); }, "Tag similarity threshold for organism.");
+  pop_snapshot_stats.emplace_back("inst_cnt", [this]() { return GetOrg(pop_snapshot_info.cur_org_id).GetInstCnt(); }, "");
+  pop_snapshot_stats.emplace_back("inst_entropy", [this]() { return GetOrg(pop_snapshot_info.cur_org_id).GetInstEntropy(); }, "");
+  pop_snapshot_stats.emplace_back("func_cnt", [this]() { return func_cnt_fun(GetOrg(pop_snapshot_info.cur_org_id)); }, "");
+  pop_snapshot_stats.emplace_back("func_used", [this]() { return func_used_fun(GetOrg(pop_snapshot_info.cur_org_id)); }, "");
+  pop_snapshot_stats.emplace_back("func_entered", [this]() { return func_entered_cnt_fun(GetOrg(pop_snapshot_info.cur_org_id)); }, "");
+  pop_snapshot_stats.emplace_back("func_entered_entropy", [this]() { return func_entered_ent_fun(GetOrg(pop_snapshot_info.cur_org_id)); }, "");
   
   #endif
 
@@ -565,6 +602,8 @@ void MapElitesGPWorld::Init_Configs(MapElitesGPConfig & config) {
   DATA_DIRECTORY = config.DATA_DIRECTORY();
   STATISTICS_INTERVAL = config.STATISTICS_INTERVAL();
   SNAPSHOT_INTERVAL = config.SNAPSHOT_INTERVAL();
+  DOM_SNAPSHOT_TRIAL_CNT = config.DOM_SNAPSHOT_TRIAL_CNT();
+  MAP_SNAPSHOT_TRIAL_CNT = config.MAP_SNAPSHOT_TRIAL_CNT();
 
   // Verify any config constraints
   if (EVAL_TRIAL_CNT < 1) {
@@ -859,6 +898,9 @@ void MapElitesGPWorld::SetupProblem_ChgEnv() {
         }, 1, "Sense if current environment state is " + emp::to_string(i));
     }
   }
+
+  // Extra pop snapshot stats to collect
+  // pop_snapshot_stats.emplace_back("env_matches", [this]() { return pop_snapshot_info.cur_org_id; }, "");
   
 }
 
@@ -908,14 +950,26 @@ void MapElitesGPWorld::SetupWorldMode_EA() {
   // Setup dominant snapshotting.
   do_pop_snapshot_sig.AddAction([this]() { Snapshot_Dominant(); }); 
 
+  // Setup dominant file stats. 
+  dom_file_stats.emplace_back("update", [this](){ return GetUpdate(); }, "Update (generation) in world.");
+  dom_file_stats.emplace_back("org_id", [this]() { return dominant_id; }, "Dominant organism ID.");
+  dom_file_stats.emplace_back("fitness", [this]() { return agg_scores(GetOrg(dominant_id)); }, "Dominant organism fitness.");
+  dom_file_stats.emplace_back("tag_sim_thresh", [this]() { return GetOrg(dominant_id).GetTagSimilarityThreshold(); }, "Tag similarity threshold for dominant organism.");
+  dom_file_stats.emplace_back("inst_cnt", [this]() { return GetOrg(dominant_id).GetInstCnt(); }, "Instruction count for dominant organism.");
+  dom_file_stats.emplace_back("inst_entropy", [this]() { return GetOrg(dominant_id).GetInstEntropy(); }, "Instruction entropy for dominant organism.");
+  dom_file_stats.emplace_back("func_cnt", [this]() { return func_cnt_fun(GetOrg(dominant_id)); }, "Function count for dominant organism.");
+  dom_file_stats.emplace_back("func_used", [this]() { return func_used_fun(GetOrg(dominant_id)); }, "Count of unique functions used by dominant organism.");
+  dom_file_stats.emplace_back("func_entered", [this]() { return func_entered_cnt_fun(GetOrg(dominant_id)); }, "Count of functions entered/called by dominant organism.");
+  dom_file_stats.emplace_back("func_entered_entropy", [this]() { return func_entered_ent_fun(GetOrg(dominant_id)); }, "Functions entered entropy for dominant organism");
+
   // Add dominant file. 
-  // AddDominantFile(DATA_DIRECTORY + "dominant.csv").SetTimingRepeat(STATISTICS_INTERVAL);
+  AddDominantFile(DATA_DIRECTORY + "/dominant.csv").SetTimingRepeat(STATISTICS_INTERVAL);
   #endif
 
     // One of last things to do before run: resize phenotype cache
   do_begin_run_sig.AddAction([this]() {
     std::cout << "Resizing the phenotype cache(" << POP_SIZE << ")!" << std::endl;
-    phen_cache.Resize(POP_SIZE, EVAL_TRIAL_CNT); // Add one position as temp position for MAP-elites
+    phen_cache.Resize(POP_SIZE+1, EVAL_TRIAL_CNT); // Add one position as temp position for MAP-elites
   });
   
 }
@@ -1156,22 +1210,92 @@ void MapElitesGPWorld::Snapshot_Programs() {
 
 /// Snapshot population statistics for current update.
 void MapElitesGPWorld::Snapshot_PopulationStats() {
-  // TODO: this
+  std::string snapshot_dir = DATA_DIRECTORY + "pop_" + emp::to_string((int)GetUpdate());
+  mkdir(snapshot_dir.c_str(), ACCESSPERMS);
+  emp::DataFile file(snapshot_dir + "/pop_" + emp::to_string((int)GetUpdate()) + ".csv");
+
+  for (size_t i = 0; i < pop_snapshot_stats.size(); ++i) {
+    file.AddFun(pop_snapshot_stats[i].fun, pop_snapshot_stats[i].name, pop_snapshot_stats[i].desc);
+  }
+  file.PrintHeaderKeys();
+
+  // Loop through the population, updating file with individuals' stats. 
+  for (pop_snapshot_info.cur_org_id = 0; pop_snapshot_info.cur_org_id < GetSize(); ++pop_snapshot_info.cur_org_id) {
+    if (!IsOccupied(pop_snapshot_info.cur_org_id)) continue;
+    org_t & org = GetOrg(pop_snapshot_info.cur_org_id);
+    org.SetPos(pop_snapshot_info.cur_org_id);
+    Evaluate(org);
+    file.Update();
+  }
+
 }
 
 /// Snapshot dominant program performance over many trials (only makes sense in context of EA run). 
 void MapElitesGPWorld::Snapshot_Dominant() {
-  // TODO: this
+  emp_assert(RUN_MODE == (size_t)WORLD_MODE::EA);
+
+  std::string snapshot_dir = DATA_DIRECTORY + "pop_" + emp::to_string((int)GetUpdate());
+  mkdir(snapshot_dir.c_str(), ACCESSPERMS);
+  emp::DataFile file(snapshot_dir + "/dom_" + emp::to_string((int)GetUpdate()) + ".csv");
+
+  size_t evalID = 0;
+  std::function<size_t(void)> get_evalID = [&evalID](){ return evalID; };
+  file.AddFun(get_evalID, "eval", "Evaluation ID of this stat-line.");
+  for (size_t i = 0; i < pop_snapshot_stats.size(); ++i) {
+    file.AddFun(pop_snapshot_stats[i].fun, pop_snapshot_stats[i].name, pop_snapshot_stats[i].desc);
+  }
+  file.PrintHeaderKeys();
+
+  // emp::vector<double 
+  org_t & dom = GetOrg(dominant_id);
+  dom.SetPos(dominant_id);
+
+  for (size_t evalID = 0; evalID < DOM_SNAPSHOT_TRIAL_CNT; ++evalID) {
+    Evaluate(dom);
+    file.Update();
+  }
+  
 }
 
 /// Snapshot map from MAP-elites (only makes sense in context of MAP-Elites run). 
 void MapElitesGPWorld::Snapshot_MAP(void) {
-  // TODO: this
+  emp_assert(RUN_MODE == (size_t)WORLD_MODE::MAPE);
+
+  std::string snapshot_dir = DATA_DIRECTORY + "pop_" + emp::to_string((int)GetUpdate());
+  mkdir(snapshot_dir.c_str(), ACCESSPERMS);
+  emp::DataFile file(snapshot_dir + "/map_" + emp::to_string((int)GetUpdate()) + ".csv");
+
+  size_t evalID = 0;
+  std::function<size_t(void)> get_evalID = [&evalID](){ return evalID; };
+  file.AddFun(get_evalID, "eval", "Evaluation ID of this stat-line.");
+  for (size_t i = 0; i < pop_snapshot_stats.size(); ++i) {
+    file.AddFun(pop_snapshot_stats[i].fun, pop_snapshot_stats[i].name, pop_snapshot_stats[i].desc);
+  }
+  
+  file.PrintHeaderKeys();
+
+  for (size_t orgID = 0; orgID < GetSize(); ++orgID) {
+    if (!IsOccupied(orgID)) continue;
+    for (evalID = 0; evalID < MAP_SNAPSHOT_TRIAL_CNT; ++evalID) {
+      org_t & org = GetOrg(orgID);
+      org.SetPos(orgID);
+      Evaluate(org);
+      file.Update();
+    }
+  }
 }
 
 /// Add a data file to track dominant program. Will track at same interval as fitness file. (only makes sense in context of EA run).
-emp::DataFile & MapElitesGPWorld::AddDominantFile(const std::string & fpath) {
-  // TODO: this
+emp::DataFile & MapElitesGPWorld::AddDominantFile(const std::string & fpath="dominant.csv") {
+  auto & file = SetupFile(fpath);
+
+  // TODO: convert to dom_stats thing
+  for (size_t i = 0; i < dom_file_stats.size(); ++i) {
+    file.AddFun(dom_file_stats[i].fun, dom_file_stats[i].name, dom_file_stats[i].desc);
+  }
+
+  file.PrintHeaderKeys();
+  return file;
 }
 
 

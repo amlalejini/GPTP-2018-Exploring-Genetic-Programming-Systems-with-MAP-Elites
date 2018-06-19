@@ -79,6 +79,8 @@ EMP_BUILD_CONFIG( MapElitesGPConfig,
   VALUE(DATA_DIRECTORY, std::string, "./output", "Location to dump data output."),
   VALUE(STATISTICS_INTERVAL, size_t, 100, "How often should we output summary statistics?"),
   VALUE(SNAPSHOT_INTERVAL, size_t, 1000, "How often should we take a population snapshot?"),
+  VALUE(DOM_SNAPSHOT_TRIAL_CNT, size_t, 100, "How many trials should we do in dominant snapshot?"),
+  VALUE(MAP_SNAPSHOT_TRIAL_CNT, size_t, 10, "How many trials should we do in a map snapshot?"),
 )
 
 #endif
