@@ -32,6 +32,10 @@
         emp_assert(eval_id < eval_cnt); 
         return phen_cache[(org_id * eval_cnt) + eval_id];
       }
+
+      emp::vector<phenotype_t> & GetCache() {
+        return phen_cache;
+      }
     
   };
 

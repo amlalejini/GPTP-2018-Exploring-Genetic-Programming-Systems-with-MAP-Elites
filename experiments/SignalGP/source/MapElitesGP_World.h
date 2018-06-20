@@ -48,6 +48,9 @@
 class MapElitesGPWorld : public emp::World<MapElitesGPOrg> {
 public:
   static constexpr double MIN_POSSIBLE_SCORE = -32767;
+  static constexpr size_t MAX_LOGIC_TASK_NUM_INPUTS = 2;
+  static constexpr uint32_t MIN_LOGIC_TASK_INPUT = 0;
+  static constexpr uint32_t MAX_LOGIC_TASK_INPUT = 1000000000;
 
   enum class WORLD_MODE { EA=0, MAPE=1 };
   enum class PROBLEM_TYPE { CHG_ENV=0, TESTCASES=1, LOGIC=2 };
@@ -73,9 +76,11 @@ public:
 
   using trait_id_t = typename org_t::HW_TRAIT_ID;
 
-
   using mut_fun_t = std::function<size_t(org_t &, emp::Random &)>;
   using score_fun_t = std::function<double(org_t &, phenotype_t &)>;
+
+  using task_io_t = uint32_t;
+  using taskset_t = TaskSet<std::array<task_io_t, MAX_LOGIC_TASK_NUM_INPUTS>, task_io_t>;
 
   struct OrgPhenotype {
     // Generic
@@ -89,8 +94,16 @@ public:
     // For testcase problems
     emp::vector<double> testcase_results;
 
-    // For logic 9 problem
-    // TODO
+    // For logic problem
+    size_t task_cnt;
+    size_t time_all_logic_tasks_done;
+    size_t unique_logic_tasks_done;
+    emp::vector<size_t> logic_tasks_done_by_task;
+
+    void SetTaskCnt(size_t val) {
+      task_cnt = val;
+      logic_tasks_done_by_task.resize(task_cnt, 0);
+    }
 
     void Reset() {
       score = 0;
@@ -100,6 +113,10 @@ public:
       env_match_score = 0;
 
       testcase_results.clear();
+
+      time_all_logic_tasks_done = 0;
+      unique_logic_tasks_done = 0;
+      for (size_t i = 0; i < task_cnt; ++i) logic_tasks_done_by_task[i] = 0;
     }
   };
 
@@ -184,6 +201,11 @@ protected:
 
   TestcaseSet<int, double> testcases;
   emp::vector<size_t> testcase_ids;
+
+  taskset_t task_set;
+  std::array<task_io_t, MAX_LOGIC_TASK_NUM_INPUTS> task_inputs;
+  size_t input_load_id;
+
 
   PhenotypeCache<OrgPhenotype> phen_cache;  // NOTE: cache is not necessarily accurate for everyone in pop during MAPE
   score_fun_t calc_score;
@@ -309,6 +331,19 @@ protected:
   /// Add a data file to track dominant program. Will track at same interval as fitness file. (only makes sense in context of EA run).
   emp::DataFile & AddDominantFile(const std::string & fpath);
 
+  // === Logic task problem utility functions ===
+  /// Reset logic tasks, guaranteeing no solution collisions among the tasks.
+  void ResetTasks() {
+    input_load_id = 0;
+    task_inputs[0] = random_ptr->GetUInt(MIN_LOGIC_TASK_INPUT, MAX_LOGIC_TASK_INPUT);
+    task_inputs[1] = random_ptr->GetUInt(MIN_LOGIC_TASK_INPUT, MAX_LOGIC_TASK_INPUT);
+    task_set.SetInputs(task_inputs);
+    while (task_set.IsCollision()) {
+      task_inputs[0] = random_ptr->GetUInt(MIN_LOGIC_TASK_INPUT, MAX_LOGIC_TASK_INPUT);
+      task_inputs[1] = random_ptr->GetUInt(MIN_LOGIC_TASK_INPUT, MAX_LOGIC_TASK_INPUT);
+      task_set.SetInputs(task_inputs);
+    }
+  }
 
   // === Eval hardware utility functions ===
   void ResetEvalHW() {
@@ -1062,6 +1097,202 @@ void MapElitesGPWorld::SetupProblem_Testcases() {
 }
 
 void MapElitesGPWorld::SetupProblem_Logic() {
+
+  // Configure the tasks. 
+  // Zero out task inputs.
+  for (size_t i = 0; i < MAX_LOGIC_TASK_NUM_INPUTS; ++i) task_inputs[i] = 0;
+  input_load_id = 0;
+
+  // Add tasks to set.
+  // NAND
+  task_set.AddTask("NAND", [](taskset_t::Task & task, const std::array<task_io_t, MAX_LOGIC_TASK_NUM_INPUTS> & inputs) {
+    const task_io_t a = inputs[0], b = inputs[1];
+    task.solutions.emplace_back(~(a&b));
+  }, "NAND task");
+  // NOT
+  task_set.AddTask("NOT", [](taskset_t::Task & task, const std::array<task_io_t, MAX_LOGIC_TASK_NUM_INPUTS> & inputs) {
+    const task_io_t a = inputs[0], b = inputs[1];
+    task.solutions.emplace_back(~a);
+    task.solutions.emplace_back(~b);
+  }, "NOT task");
+  // ORN
+  task_set.AddTask("ORN", [](taskset_t::Task & task, const std::array<task_io_t, MAX_LOGIC_TASK_NUM_INPUTS> & inputs) {
+    const task_io_t a = inputs[0], b = inputs[1];
+    task.solutions.emplace_back((a|(~b)));
+    task.solutions.emplace_back((b|(~a)));
+  }, "ORN task");
+  // AND
+  task_set.AddTask("AND", [](taskset_t::Task & task, const std::array<task_io_t, MAX_LOGIC_TASK_NUM_INPUTS> & inputs) {
+    const task_io_t a = inputs[0], b = inputs[1];
+    task.solutions.emplace_back(a&b);
+  }, "AND task");
+  // OR
+  task_set.AddTask("OR", [](taskset_t::Task & task, const std::array<task_io_t, MAX_LOGIC_TASK_NUM_INPUTS> & inputs) {
+    const task_io_t a = inputs[0], b = inputs[1];
+    task.solutions.emplace_back(a|b);
+  }, "OR task");
+  // ANDN
+  task_set.AddTask("ANDN", [](taskset_t::Task & task, const std::array<task_io_t, MAX_LOGIC_TASK_NUM_INPUTS> & inputs) {
+    const task_io_t a = inputs[0], b = inputs[1];
+    task.solutions.emplace_back((a&(~b)));
+    task.solutions.emplace_back((b&(~a)));
+  }, "ANDN task");
+  // NOR
+  task_set.AddTask("NOR", [](taskset_t::Task & task, const std::array<task_io_t, MAX_LOGIC_TASK_NUM_INPUTS> & inputs) {
+    const task_io_t a = inputs[0], b = inputs[1];
+    task.solutions.emplace_back(~(a|b));
+  }, "NOR task");
+  // XOR
+  task_set.AddTask("XOR", [](taskset_t::Task & task, const std::array<task_io_t, MAX_LOGIC_TASK_NUM_INPUTS> & inputs) {
+    const task_io_t a = inputs[0], b = inputs[1];
+    task.solutions.emplace_back(a^b);
+  }, "XOR task");
+  // EQU
+  task_set.AddTask("EQU", [](taskset_t::Task & task, const std::array<task_io_t, MAX_LOGIC_TASK_NUM_INPUTS> & inputs) {
+    const task_io_t a = inputs[0], b = inputs[1];
+    task.solutions.emplace_back(~(a^b));
+  }, "EQU task");
+  // ECHO
+  task_set.AddTask("ECHO", [](taskset_t::Task & task, const std::array<task_io_t, MAX_LOGIC_TASK_NUM_INPUTS> & inputs) {
+    const task_io_t a = inputs[0], b = inputs[1];
+    task.solutions.emplace_back(a);
+    task.solutions.emplace_back(b);
+  }, "ECHO task");
+
+  // Need this to happen before run, but after phenotype cache resize.
+  do_pop_init_sig.AddAction([this]() {
+    for (size_t i = 0; i < phen_cache.GetCache().size(); ++i) {
+      phen_cache.GetCache()[i].SetTaskCnt(task_set.GetSize());
+    }
+  }); // 
+
+  // Add logic problem instructions
+  inst_lib.AddInst("Load-1", [this](hardware_t & hw, const inst_t & inst) {
+    state_t & state = hw.GetCurState();
+    state.SetLocal(inst.args[0], task_inputs[input_load_id]); // Load input.
+    input_load_id += 1;
+    if (input_load_id >= task_inputs.size()) input_load_id = 0; // Update load ID.
+  }, 1, "WM[ARG1] = TaskInput[LOAD_ID]; LOAD_ID++;");
+
+  inst_lib.AddInst("Load-2", [this](hardware_t & hw, const inst_t & inst) { 
+    state_t & state = hw.GetCurState();
+    state.SetLocal(inst.args[0], task_inputs[0]);
+    state.SetLocal(inst.args[1], task_inputs[1]);
+  }, 2, "WM[ARG1] = TASKINPUT[0]; WM[ARG2] = TASKINPUT[1];");
+ 
+  inst_lib.AddInst("Submit", [this](hardware_t & hw, const inst_t & inst) { 
+    state_t & state = hw.GetCurState();
+    task_set.Submit((task_io_t)state.GetLocal(inst.args[0]), eval_time);
+  }, 1, "Submit WM[ARG1] as potential task solution.");
+
+  inst_lib.AddInst("Nand", [this](hardware_t & hw, const inst_t & inst) {
+    state_t & state = hw.GetCurState();
+    const task_io_t a = (task_io_t)state.GetLocal(inst.args[0]);
+    const task_io_t b = (task_io_t)state.GetLocal(inst.args[1]);
+    state.SetLocal(inst.args[2], ~(a&b));
+  } , 3, "WM[ARG3]=~(WM[ARG1]&WM[ARG2])");
+
+  // setup score
+  calc_score = [this](org_t & org, phenotype_t & phen) {
+    // Num unique tasks completed + (TOTAL TIME - COMPLETED TIME)
+    double score = 0;
+    score += phen.unique_logic_tasks_done;
+    if (phen.time_all_logic_tasks_done > 0) score += (EVAL_TIME - phen.time_all_logic_tasks_done);
+    return score;
+  };
+
+  // Reset tasks at beginning of a trial. 
+  begin_org_trial_sig.AddAction([this](org_t & org) {
+    ResetTasks();
+    memory_t input_mem;
+    for (size_t i = 0; i < MAX_LOGIC_TASK_NUM_INPUTS; ++i) input_mem[i] = task_inputs[i];
+    eval_hw->SpawnCore(tag_t(), 0.0, input_mem, true);
+  });
+
+  // Logic problem needs non-default end_org_trial action.
+  end_org_trial_sig.Clear();
+  end_org_trial_sig.AddAction([this](org_t & org) {
+    const size_t id = org.GetPos();
+    phenotype_t & phen = phen_cache.Get(id, trial_id); 
+    // Update logic problem phenotype info
+    phen.time_all_logic_tasks_done = task_set.GetAllTasksCreditedTime();
+    phen.unique_logic_tasks_done = task_set.GetUniqueTasksCredited();
+    for (size_t taskID = 0; taskID < task_set.GetSize(); ++taskID) {
+      phen.logic_tasks_done_by_task[taskID] = task_set.GetTask(taskID).GetCreditedCnt();
+    }
+    phen.score = calc_score(org, phen);
+  });
+
+  
+  #ifndef EMSCRIPTEN
+  // Things to record:
+  //  - time all logic tasks done
+  //  - unique logic tasks done
+  //  - logic tasks done by task
+  do_begin_run_sig.AddAction([this]() {
+    pop_snapshot_stats.emplace_back("time_all_logic_tasks_completed", 
+      [this]() { 
+        double total = 0;
+        for (size_t i = 0; i < EVAL_TRIAL_CNT; ++i) {
+          total += phen_cache.Get(pop_snapshot_info.cur_org_id, i).time_all_logic_tasks_done;
+        }
+        return total / EVAL_TRIAL_CNT;
+      }, "");
+    
+    pop_snapshot_stats.emplace_back("unique_logic_tasks_completed", 
+      [this]() { 
+        double total = 0;
+        for (size_t i = 0; i < EVAL_TRIAL_CNT; ++i) {
+          total += phen_cache.Get(pop_snapshot_info.cur_org_id, i).unique_logic_tasks_done;
+        }
+        return total / EVAL_TRIAL_CNT;
+      }, "");
+
+    if (RUN_MODE == (size_t)WORLD_MODE::EA) {
+      dom_file_stats.emplace_back("time_all_logic_tasks_completed", 
+        [this]() { 
+          double total = 0;
+          for (size_t i = 0; i < EVAL_TRIAL_CNT; ++i) {
+            total += phen_cache.Get(dominant_id, i).time_all_logic_tasks_done;
+          }
+          return total / EVAL_TRIAL_CNT;
+        }, "");
+
+      dom_file_stats.emplace_back("unique_logic_tasks_completed", 
+        [this]() { 
+          double total = 0;
+          for (size_t i = 0; i < EVAL_TRIAL_CNT; ++i) {
+            total += phen_cache.Get(dominant_id, i).unique_logic_tasks_done;
+          }
+          return total / EVAL_TRIAL_CNT;
+        }, "");
+    }
+    
+    for (size_t taskID = 0; taskID < task_set.GetSize(); ++taskID) {
+      pop_snapshot_stats.emplace_back("completed_"+task_set.GetName(taskID), 
+        [this, taskID]() { 
+          double total = 0;
+          for (size_t i = 0; i < EVAL_TRIAL_CNT; ++i) {
+            total += phen_cache.Get(pop_snapshot_info.cur_org_id, i).logic_tasks_done_by_task[taskID];
+          }
+          return total / EVAL_TRIAL_CNT; 
+        }, "");
+      
+      if (RUN_MODE == (size_t)WORLD_MODE::EA) {
+        dom_file_stats.emplace_back("completed_"+task_set.GetName(taskID), 
+          [this, taskID]() { 
+            double total = 0;
+            for (size_t i = 0; i < EVAL_TRIAL_CNT; ++i) {
+              total += phen_cache.Get(dominant_id, i).logic_tasks_done_by_task[taskID];
+            }
+            return total / EVAL_TRIAL_CNT; 
+          }, "");
+      }
+    }  
+
+  });
+
+  #endif
 
 }
 
