@@ -794,12 +794,12 @@ void MapElitesGPWorld::Init_Hardware() {
   inst_lib.AddInst("Terminate", hardware_t::Inst_Terminate, 0, "Kill current thread.");
   inst_lib.AddInst("DerefWorking", [](hardware_t & hw, const inst_t & inst) {
     state_t & state = hw.GetCurState();
-    state.SetLocal(inst.args[1], state.GetLocal(state.GetLocal(inst.args[0])));
+    state.SetLocal(inst.args[1], state.GetLocal( (int)state.GetLocal(inst.args[0]) ) );
   }, 2, "WM[Arg2] = WM[WM[Arg1]]");
   
   inst_lib.AddInst("DerefInput", [](hardware_t & hw, const inst_t & inst) {
     state_t & state = hw.GetCurState();
-    state.SetLocal(inst.args[1], state.GetInput(state.GetLocal(inst.args[0])));
+    state.SetLocal(inst.args[1], state.GetInput( (int)state.GetLocal(inst.args[0]) ) );
   }, 2, "WM[Arg2] = IN[WM[Arg1]]");
 
   // Configure the evaluation hardware.
@@ -1051,8 +1051,8 @@ void MapElitesGPWorld::SetupProblem_Testcases() {
       eval_hw->SetTrait(trait_id_t::ORG_ID, org.GetPos());
       // Fill out input memory with testcase info. 
       memory_t input_mem;
-      for (size_t i = 0; i < testcases[testcase].first.size(); ++i) {
-        input_mem[i] = testcases[testcase].first[i];
+      for (size_t i = 0; i < testcases.GetInput(testcase).size(); ++i) {
+        input_mem[(int)i] = testcases.GetInput(testcase)[i];
       }
       // Spawn main core!
       eval_hw->SpawnCore(tag_t(), 0.0, input_mem, true);
@@ -1067,11 +1067,12 @@ void MapElitesGPWorld::SetupProblem_Testcases() {
       double output = eval_hw->GetTrait(trait_id_t::PROBLEM_OUTPUT);
       bool output_set = (bool)eval_hw->GetTrait(trait_id_t::OUTPUT_SET);
 
+      // TODO: talk to Emily about making this fitness assignment more specific to benchmark. 
       double result = 0;
       if (output_set) {
-        int divisor = testcases[testcase].second;
+        int divisor = (int)testcases.GetOutput(testcase);
         if (divisor == 0) divisor = 1;
-        result = 1 / (std::abs(output - testcases[testcase].second)/divisor);
+        result = 1 / (std::abs(output - testcases.GetOutput(testcase))/divisor);
       }
       if (result > 1000) result = 1000;
 
@@ -1185,7 +1186,7 @@ void MapElitesGPWorld::SetupProblem_Logic() {
     task_set.Submit((task_io_t)state.GetLocal(inst.args[0]), eval_time);
   }, 1, "Submit WM[ARG1] as potential task solution.");
 
-  inst_lib.AddInst("Nand", [this](hardware_t & hw, const inst_t & inst) {
+  inst_lib.AddInst("Nand", [](hardware_t & hw, const inst_t & inst) {
     state_t & state = hw.GetCurState();
     const task_io_t a = (task_io_t)state.GetLocal(inst.args[0]);
     const task_io_t b = (task_io_t)state.GetLocal(inst.args[1]);
@@ -1205,7 +1206,7 @@ void MapElitesGPWorld::SetupProblem_Logic() {
   begin_org_trial_sig.AddAction([this](org_t & org) {
     ResetTasks();
     memory_t input_mem;
-    for (size_t i = 0; i < MAX_LOGIC_TASK_NUM_INPUTS; ++i) input_mem[i] = task_inputs[i];
+    for (size_t i = 0; i < MAX_LOGIC_TASK_NUM_INPUTS; ++i) input_mem[(int)i] = task_inputs[i];
     eval_hw->SpawnCore(tag_t(), 0.0, input_mem, true);
   });
 
