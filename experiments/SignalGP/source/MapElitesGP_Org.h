@@ -29,9 +29,10 @@ public:
   ///   - PROBLEM_OUTPUT - used to track organism's output to a problem.                              ///
   enum HW_TRAIT_ID { ORG_ID=0, PROBLEM_OUTPUT=1, ORG_STATE=2, OUTPUT_SET=3 }; 
 
+  /// Struct to keep track of the genome, which includes everything that we directly mutate/evolve.
   struct Genome {
-    program_t program;
-    double tag_sim_thresh;
+    program_t program;      ///< Program that defines organism behavior. 
+    double tag_sim_thresh;  ///< Minimum tag similarity threshold. 
 
     Genome(const program_t & _p, double _s=0) : program(_p), tag_sim_thresh(_s) { ; }
     Genome(Genome && in) : program(in.program), tag_sim_thresh(in.tag_sim_thresh) { ; }
@@ -39,8 +40,8 @@ public:
   };
 
 protected:
-  size_t pos; ///< Position in world.
-  genome_t genome;
+  size_t pos;       ///< Position in world.
+  genome_t genome;  ///< Organism genome.
   
   /// Information about organism genome
   /// (e.g. program stats, stuff that doesn't change in context of environment)
@@ -60,15 +61,25 @@ public:
   MapElitesGPOrg(const MapElitesGPOrg & in) : pos(in.pos), genome(in.genome), genome_info(in.genome_info) { ; }
   MapElitesGPOrg(MapElitesGPOrg && in) : pos(in.pos), genome(in.genome), genome_info(in.genome_info) { ; }
 
+  /// Retrieve the position of the organism (which is whatever was set via SetPos). 
   size_t GetPos() const { return pos; }
+
+  /// Update the position of the organism. 
   void SetPos(size_t id) { pos = id; }
 
+  /// Retrieve the genome of this organism. 
   genome_t & GetGenome() { return genome; }
+
+  /// Retrieve the program for this organism (from within the genome). 
   program_t & GetProgram() { return genome.program; }
+
+  /// Retrieve the tag similarity threshold for this organism (from withint he genome).
   double GetTagSimilarityThreshold() const { return genome.tag_sim_thresh; }
 
+  /// Reset genome information (i.e., flag that it is no longer accurate). 
   void ResetGenomeInfo() { genome_info.calculated = false; }
   
+  /// Calculate genome information, filling out genome_info member variable. 
   void CalcGenomeInfo() {
     // - inst entropy
     emp::vector<inst_t> inst_seq;
@@ -86,16 +97,19 @@ public:
     genome_info.calculated = true; 
   }
 
+  /// Retrieve genome instruction entropy. If not calculated, calculate.
   double GetInstEntropy() {
     if (!genome_info.calculated) CalcGenomeInfo();
     return genome_info.inst_entropy; 
   }
 
+  /// Retrieve genome instruction count. If not calculated, calculate.
   double GetInstCnt() { 
     if (!genome_info.calculated) CalcGenomeInfo();
     return genome_info.inst_cnt; 
   }
 
+  /// Retrive function count of genome. 
   double GetFunctionCnt() { return GetProgram().GetSize(); }
 
 
