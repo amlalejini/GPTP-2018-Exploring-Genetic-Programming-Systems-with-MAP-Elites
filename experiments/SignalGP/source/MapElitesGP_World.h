@@ -41,7 +41,7 @@
 // Major TODOS: 
 // - [ ] Add logic 9 problem 
 // - [ ] Add testcase problems
-//      - [ ] Cleanup
+//      - [ ] Cleanup (improve testcase set, get rid of warnings)
 // - [ ] Testing/debugging
 // - [ ] Documentation
 
@@ -50,7 +50,7 @@ public:
   static constexpr double MIN_POSSIBLE_SCORE = -32767;
 
   enum class WORLD_MODE { EA=0, MAPE=1 };
-  enum class PROBLEM_TYPE { CHG_ENV=0, TESTCASES=1 };
+  enum class PROBLEM_TYPE { CHG_ENV=0, TESTCASES=1, LOGIC=2 };
   enum class SELECTION_METHOD { TOURNAMENT=0 };
   enum class POP_INIT_METHOD { RANDOM=0, ANCESTOR=1 };
   enum class EVAL_TRIAL_AGG_METHOD { MIN=0, MAX=1, AVG=2 }; 
@@ -183,6 +183,7 @@ protected:
   emp::Ptr<hardware_t> eval_hw;
 
   TestcaseSet<int, double> testcases;
+  emp::vector<size_t> testcase_ids;
 
   PhenotypeCache<OrgPhenotype> phen_cache;  // NOTE: cache is not necessarily accurate for everyone in pop during MAPE
   score_fun_t calc_score;
@@ -279,6 +280,7 @@ protected:
 
   void SetupProblem_ChgEnv();
   void SetupProblem_Testcases();
+  void SetupProblem_Logic();
 
   void SetupWorldMode_EA();
   void SetupWorldMode_MAPE();
@@ -755,6 +757,16 @@ void MapElitesGPWorld::Init_Hardware() {
   inst_lib.AddInst("Nop", hardware_t::Inst_Nop, 0, "No operation.");
   inst_lib.AddInst("Fork", hardware_t::Inst_Fork, 0, "Fork a new thread. Local memory contents of callee are loaded into forked thread's input memory.");
   inst_lib.AddInst("Terminate", hardware_t::Inst_Terminate, 0, "Kill current thread.");
+  inst_lib.AddInst("DerefWorking", [](hardware_t & hw, const inst_t & inst) {
+    state_t & state = hw.GetCurState();
+    state.SetLocal(inst.args[1], state.GetLocal(state.GetLocal(inst.args[0])));
+  }, 2, "WM[Arg2] = WM[WM[Arg1]]");
+  
+  inst_lib.AddInst("DerefInput", [](hardware_t & hw, const inst_t & inst) {
+    state_t & state = hw.GetCurState();
+    state.SetLocal(inst.args[1], state.GetInput(state.GetLocal(inst.args[0])));
+  }, 2, "WM[Arg2] = IN[WM[Arg1]]");
+
   // Configure the evaluation hardware.
   eval_hw = emp::NewPtr<hardware_t>(&inst_lib, &event_lib, random_ptr);
   eval_hw->SetMinBindThresh(HW_MIN_TAG_SIMILARITY_THRESH);
@@ -788,6 +800,10 @@ void MapElitesGPWorld::Init_Problem() {
     case (size_t)PROBLEM_TYPE::TESTCASES: {
       SetupProblem_Testcases();
       break;     
+    }
+    case (size_t)PROBLEM_TYPE::LOGIC: {
+      SetupProblem_Logic();
+      break;
     }
     default: {
       std::cout << "Unrecognized problem type (" << PROBLEM_TYPE << "). Exiting..." << std::endl;
@@ -968,11 +984,7 @@ void MapElitesGPWorld::SetupProblem_ChgEnv() {
           state.SetLocal(inst.args[0], this->chgenv_info.env_state==i);
         }, 1, "Sense if current environment state is " + emp::to_string(i));
     }
-  }
-
-  // Extra pop snapshot stats to collect
-  // pop_snapshot_stats.emplace_back("env_matches", [this]() { return pop_snapshot_info.cur_org_id; }, "");
-  
+  }  
 }
 
 void MapElitesGPWorld::SetupProblem_Testcases() {
@@ -980,6 +992,8 @@ void MapElitesGPWorld::SetupProblem_Testcases() {
   testcases.LoadTestcases(TESTCASES_FPATH);
   std::cout << "Loaded test cases (" << testcases.GetTestcases().size() << ") from: " << TESTCASES_FPATH << std::endl;
   emp_assert(NUM_TEST_CASES <= testcases.GetTestcases().size());
+
+  for (size_t i = 0; i < testcases.GetTestcases().size(); ++i) testcase_ids.emplace_back(i);
 
   // Setup fitness stuff
   // do_begin_eval
@@ -995,7 +1009,9 @@ void MapElitesGPWorld::SetupProblem_Testcases() {
   
   do_org_trial_sig.AddAction([this](org_t & org) {
     // TODO: pick random subset of testcases
-    for (size_t testcase = 0; testcase < NUM_TEST_CASES; ++testcase) {
+    emp::Shuffle(*random_ptr, testcase_ids);
+    for (size_t t = 0; t < NUM_TEST_CASES; ++t) {
+      size_t testcase = testcase_ids[t];
       ResetEvalHW();
       eval_hw->SetTrait(trait_id_t::ORG_ID, org.GetPos());
       // Fill out input memory with testcase info. 
@@ -1036,13 +1052,16 @@ void MapElitesGPWorld::SetupProblem_Testcases() {
   // Setup extra instructions
   // - Submit
   inst_lib.AddInst("SubmitResult", 
-    [this](hardware_t & hw, const inst_t & inst) {
+    [](hardware_t & hw, const inst_t & inst) {
       state_t & state = hw.GetCurState();
       hw.SetTrait(trait_id_t::PROBLEM_OUTPUT, state.GetLocal(inst.args[0]));
       hw.SetTrait(trait_id_t::OUTPUT_SET, 1);
     }, 1, "Submit output for given input.");
   // TODO: load input
-  // TODO: deref
+
+}
+
+void MapElitesGPWorld::SetupProblem_Logic() {
 
 }
 
