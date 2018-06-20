@@ -31,8 +31,17 @@ public:
 
     TestcaseSet() {}
 
+    input_t & GetInput(size_t id) { 
+        emp_assert(id < test_cases.size());
+        return test_cases[id].first; 
+    }
 
-    emp::vector<std::pair<input_t, output_t> >& GetTestcases() {
+    output_t & GetOutput(size_t id) {
+        emp_assert(id < test_cases.size());
+        return test_cases[id].second;
+    }
+
+    emp::vector<std::pair<input_t, output_t> > & GetTestcases() {
         return test_cases;
     }
 
@@ -59,7 +68,7 @@ public:
         while ( getline (infile,line)) {
             emp::vector<std::string> split_line = emp::slice(line, ',');
             input_t test_case;
-            for (size_t i = 0; i < split_line.size() - int(contains_output); i++) {
+            for (size_t i = 0; i < (split_line.size() - (size_t)contains_output); i++) {
                 test_case.push_back(std::atoi(split_line[i].c_str()));
             }
             output_t answer;
@@ -70,61 +79,6 @@ public:
             // std::cout << emp::to_string(test_case) << " " << answer << std::endl;
         }
         infile.close();
-    }
-
-};
-
-template <typename INPUT_TYPE, typename OUTPUT_TYPE>
-class RuleBasedTestcaseSet : public TestcaseSet<INPUT_TYPE, OUTPUT_TYPE> {
-private:
-    using input_t = typename TestcaseSet<INPUT_TYPE, OUTPUT_TYPE>::input_t;
-    using output_t = std::set<OUTPUT_TYPE>;
-    using TestcaseSet<INPUT_TYPE, OUTPUT_TYPE>::test_cases;
-
-    emp::vector<std::function<output_t(input_t)> > groups;
-
-    // Pretty sure we can refactor this out
-    emp::vector<emp::vector<output_t> > correct_choices;
-
-public:
-
-    emp::vector<emp::vector<output_t> >& GetCorrectChoices() {
-        return correct_choices;
-    }
-
-    void LoadTestcases(std::string filename) {
-        TestcaseSet<INPUT_TYPE, OUTPUT_TYPE>::LoadTestcases(filename, false);
-
-        for (auto test_case : test_cases) {
-            for (int i = 0; i < groups.size(); i++) {
-                correct_choices[i].push_back(groups[i](test_case[0]));
-            }
-        }
-    }
-
-    void AddGroup(std::function<output_t(input_t)> func) {
-        groups.push_back(func);
-        correct_choices.push_back(emp::vector<output_t>());
-        for (auto test_case : test_cases) {
-            correct_choices[correct_choices.size() - 1].push_back(func(test_case.first));
-        }
-    }
-
-    int GetNFuncs() {
-        return groups.size();
-    }
-
-    emp::vector<int> GetBestPossible(emp::vector<size_t> choices) {
-        emp::vector<int> count;
-        for (int i = 0; i < groups.size(); i++) {
-            count.push_back(0);
-            for (size_t choice : choices) {
-                if (correct_choices[i][choice].size()){
-                    count[i]++;
-                }
-            }
-        }
-        return count;
     }
 
 };
