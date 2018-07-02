@@ -28,7 +28,7 @@ int main(int argc, char* argv[])
   emp::Random rnd(config.RANDOM_SEED());
 
   // Make, setup, and run the world!
-  MapElitesGPWorld world(rnd);
+  MapElitesSignalGPWorld world(rnd);
   world.Setup(config);
   world.Run();
 
