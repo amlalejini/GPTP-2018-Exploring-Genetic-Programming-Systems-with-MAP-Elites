@@ -6,7 +6,7 @@
 #include "config/command_line.h"
 #include "config/ArgManager.h"
 
-#include "../MapElitesGP_World.h"
+#include "../MapElitesSignalGP_World.h"
 
 int main(int argc, char* argv[])
 {

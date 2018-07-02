@@ -1,12 +1,12 @@
 # Project-specific settings
 PROJECT := SignalGP_MAPE_EXP
-EMP_DIR := ../../../Empirical/source
+EMP_DIR := ../../Empirical/source
 
 # Flags to use regardless of compiler
 CFLAGS_all := -Wall -Wno-unused-function -std=c++14 -I$(EMP_DIR)/
 
 # Native compiler information
-CXX_nat := g++
+CXX_nat := clang++
 CFLAGS_nat := -O3 -DNDEBUG $(CFLAGS_all)
 CFLAGS_nat_debug := -g $(CFLAGS_all) -DEMP_TRACK_MEM -pedantic -Wnon-virtual-dtor -Wcast-align -Woverloaded-virtual -Wconversion -Weffc++
 
