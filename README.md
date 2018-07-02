@@ -1,37 +1,114 @@
-## Welcome to GitHub Pages
+# Exploring Genetic Programming Systems with Map-Elites
 
-You can use the [editor on GitHub](https://github.com/amlalejini/GPTP-2018-Exploring-Genetic-Programming-Systems-with-MAP-Elites/edit/master/README.md) to maintain and preview the content for your website in Markdown files.
+## Treatments
+- Different problems:
+  - Testcase problems
+    - Fib. 
+    - Squares
+    - Sum
+    - Kolatz
+    - Sym. Regression
+    - Smallest
+  - Logic '10'
+  - Changing Environment
+- Selection schemes
+  - Tournament
+  - MAP-Elites
+    - Axes: instruction entropy, module (scope/function) use
+  - Random select
+  - Lexicase
+    - Test cases
+        - Testcase problems
+          - Fib. 
+          - Squares
+          - Sum
+          - Kolatz
+          - Sym. Regression
+        - Logic '10'
+          - Each logic function
+        - Changing Environment
+          - Break environment into components
 
-Whenever you commit to this repository, GitHub Pages will run [Jekyll](https://jekyllrb.com/) to rebuild the pages in your site, from the content in your Markdown files.
+## Points
+- MAP-Elites illuminates representation space more than tournament (lexicase?) during evolution
+- What does random drift look like? 
+- Case study
+  - Top-left, top-right, bottom-left, bottom-right solutions in figure => look, they're different!
 
-### Markdown
+## Stats
+- Spatial stats
+  - Are these surfaces (aggregated maps) different? 
 
-Markdown is a lightweight and easy-to-use syntax for styling your writing. It includes conventions for
+## Parameters
+### Shared
+- Population size = 1000
+- Generations = 100k
+- Population initialization: Random population initialization
+- Clear the cache every generation
+- Evaluation time
+  - Problem:
+    - Fib. = 512
+    - Squares = 128
+    - Sum = 512
+    - Smallest = 512
+    - Colatz = 512
+    - Sym. Regression = 512
+    - Logic '10' = 128
+    - Changing Environment = 256
+- Tournament size = 2
+- MAPE - Inst. entropy bin count = 20
+- Number of test cases:
+  - Squares = 10
+  - Everything else = 200
+- Program constraints
+  - Max total length 1024
+- Mutation rate
+  - Arg sub - 0.005
+  - Inst sub - 0.005
+  - Inst ins - 0.005
+  - Inst del - 0.005
+- Instruction set
+  - Dereference instruction
+  - Testcases
+    - SubResult
+  - Logic
+    - Nand
+    - Submit
 
-```markdown
-Syntax highlighted code block
+### SignalGP
+- Program constraints
+  - 32 functions
+- Mutations
+  - No slip
+  - Func dup/del = 0.05
 
-# Header 1
-## Header 2
-### Header 3
+### ScopeGP
+- Program constraints
+  - (?)17 scopes
 
-- Bulleted
-- List
+## Data tracking
+- Bin location
+  - inst entropy
+  - module used
+- Phenotype/genotype values
+  - Instruction entropy
+  - Module Used
+- Fitness
 
-1. Numbered
-2. List
+### Figures
+- For each problem & representation:
+  - Drift Map
+  - Tournament Map
+  - MAPE Map
 
-**Bold** and _Italic_ and `Code` text
+## Stretch/future
+- Run MAP-Elites over tournament/lexicase to keep track of where those algorithms have explored over all of evolutionary time. 
 
-[Link](url) and ![Image](src)
-```
-
-For more details see [GitHub Flavored Markdown](https://guides.github.com/features/mastering-markdown/).
-
-### Jekyll Themes
-
-Your Pages site will use the layout and styles from the Jekyll theme you have selected in your [repository settings](https://github.com/amlalejini/GPTP-2018-Exploring-Genetic-Programming-Systems-with-MAP-Elites/settings). The name of this theme is saved in the Jekyll `_config.yml` configuration file.
-
-### Support or Contact
-
-Having trouble with Pages? Check out our [documentation](https://help.github.com/categories/github-pages-basics/) or [contact support](https://github.com/contact) and we’ll help you sort it out.
+## Action items
+- Look up original fitness function for 'smallest' benchmark
+  - Maybe change our fitness function?
+- Merge code base
+- SIGNALGP
+  - Implement lexicase
+- ScopeGP
+  - Implement lexicase
