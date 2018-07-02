@@ -1,16 +1,11 @@
-#ifndef MAPE_GP_ORG_H
-#define MAPE_GP_ORG_H
+#ifndef MAPE_SIGNALGP_ORG_H
+#define MAPE_SIGNALGP_ORG_H
 
 #include <algorithm>
 
 #include "hardware/EventDrivenGP.h"
 
-/// Struct describing phenotypic characteristics of MapElitesGPOrg. 
-struct MapElitesOrgPhenotype {
-
-};
-
-class MapElitesGPOrg {
+class MapElitesSignalGPOrg {
 public:
   struct Genome;
   // Useful aliases
@@ -57,9 +52,9 @@ protected:
   } genome_info;
 
 public:
-  MapElitesGPOrg(const genome_t & _g) : pos(0), genome(_g), genome_info() { ; }
-  MapElitesGPOrg(const MapElitesGPOrg & in) : pos(in.pos), genome(in.genome), genome_info(in.genome_info) { ; }
-  MapElitesGPOrg(MapElitesGPOrg && in) : pos(in.pos), genome(in.genome), genome_info(in.genome_info) { ; }
+  MapElitesSignalGPOrg(const genome_t & _g) : pos(0), genome(_g), genome_info() { ; }
+  MapElitesSignalGPOrg(const MapElitesSignalGPOrg & in) : pos(in.pos), genome(in.genome), genome_info(in.genome_info) { ; }
+  MapElitesSignalGPOrg(MapElitesSignalGPOrg && in) : pos(in.pos), genome(in.genome), genome_info(in.genome_info) { ; }
 
   /// Retrieve the position of the organism (which is whatever was set via SetPos). 
   size_t GetPos() const { return pos; }

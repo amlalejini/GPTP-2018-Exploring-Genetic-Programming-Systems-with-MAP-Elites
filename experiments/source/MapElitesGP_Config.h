@@ -33,7 +33,7 @@ EMP_BUILD_CONFIG( MapElitesGPConfig,
   VALUE(MAPE_AXIS_SIZE__FUNC_ENTERED_ENTROPY, size_t, 20, "Width (in map grid cells) of the functions entered entropy MAPE axis?"),
 
   GROUP(PROBLEM, "Settings related to the problem we're evolving programs to solve."),
-  VALUE(PROBLEM_TYPE, size_t, 0, "What problem are we solving? \n0: Changing environment problem \n1: Testcase problem (requires TESTCASES_FPATH setting)"),
+  VALUE(PROBLEM_TYPE, size_t, 0, "What problem are we solving? \n0: Changing environment problem \n1: Testcase problem (requires TESTCASES_FPATH setting) \n2: Logic tasks problem"),
   VALUE(TESTCASES_FPATH, std::string, "testcases/examples-squares.csv", "Where is the file containing testcases for the problem we're solving?"),
 
   GROUP(CHG_ENV_PROBLEM, "Settings specific to the changing environment problem"),

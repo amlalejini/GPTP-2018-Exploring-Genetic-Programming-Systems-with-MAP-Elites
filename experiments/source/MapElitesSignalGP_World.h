@@ -1,5 +1,5 @@
-#ifndef MAPE_GP_WORLD_H
-#define MAPE_GP_WORLD_H
+#ifndef MAPE_SIGNALGP_WORLD_H
+#define MAPE_SIGNALGP_WORLD_H
 
 #include <iostream>
 #include <functional>
@@ -30,22 +30,17 @@
 
 // Experiment-specific includes
 #include "MapElitesGP_Config.h"
-#include "MapElitesGP_Org.h"
-#include "MapElitesGP_World.h"
+#include "MapElitesSignalGP_Org.h"
 
 #include "TestcaseSet.h"
 #include "TaskSet.h"
-
 #include "PhenotypeCache.h"
 
 // Major TODOS: 
-// - [ ] Add logic 9 problem 
-// - [ ] Add testcase problems
-//      - [ ] Cleanup (improve testcase set, get rid of warnings)
-// - [ ] Testing/debugging
+// - [ ] More Testing
 // - [ ] Documentation
 
-class MapElitesGPWorld : public emp::World<MapElitesGPOrg> {
+class MapElitesSignalGPWorld : public emp::World<MapElitesSignalGPOrg> {
 public:
   static constexpr double MIN_POSSIBLE_SCORE = -32767;
   static constexpr size_t MAX_LOGIC_TASK_NUM_INPUTS = 2;
@@ -61,7 +56,7 @@ public:
   enum class ENV_CHG_METHOD { SHUFFLE=0, CYCLE=1, RAND=2 };
   struct OrgPhenotype;
 
-  using org_t = MapElitesGPOrg; 
+  using org_t = MapElitesSignalGPOrg; 
   using phenotype_t = OrgPhenotype;
   using hardware_t = typename org_t::hardware_t;
   using program_t = typename org_t::program_t;
@@ -276,9 +271,6 @@ protected:
   emp::Signal<void(void)> do_selection_sig;     ///< Specific to run mode. Setup by RUN_MODE/WORLD_MODE setup.
   emp::Signal<void(void)> do_world_update_sig;  ///< Generic. Setup during general Setup.  
 
-  // TODO: when caching phenotypes, make cache max_env size + 1; use last position for MAP-elites eval
-  //  - Use GetSize() for max capacity
-
   // Data-tracking signals
   emp::Signal<void(void)> do_pop_snapshot_sig;
 
@@ -376,9 +368,9 @@ protected:
   }
 
 public:
-  MapElitesGPWorld() : emp::World<org_t>() { ; }
-  MapElitesGPWorld(emp::Random & rnd) : emp::World<org_t>(rnd) { ; }
-  ~MapElitesGPWorld() {
+  MapElitesSignalGPWorld() : emp::World<org_t>() { ; }
+  MapElitesSignalGPWorld(emp::Random & rnd) : emp::World<org_t>(rnd) { ; }
+  ~MapElitesSignalGPWorld() {
     eval_hw.Delete(); // Clean up evaluation hardware. 
   }
 
@@ -397,7 +389,7 @@ public:
 // World function implementations!
 
 // === Configuration/Setup functions! ===
-void MapElitesGPWorld::Setup(MapElitesGPConfig & config) {
+void MapElitesSignalGPWorld::Setup(MapElitesGPConfig & config) {
   Reset();              // Reset the world
   SetCache();           // We'll be caching fitness scores
   Init_Configs(config); // Initialize configs
@@ -644,7 +636,7 @@ void MapElitesGPWorld::Setup(MapElitesGPConfig & config) {
   }
 }
 
-void MapElitesGPWorld::Init_Configs(MapElitesGPConfig & config) {
+void MapElitesSignalGPWorld::Init_Configs(MapElitesGPConfig & config) {
   RUN_MODE = config.RUN_MODE();
   RANDOM_SEED = config.RANDOM_SEED();
   POP_SIZE = config.POP_SIZE();
@@ -726,7 +718,7 @@ void MapElitesGPWorld::Init_Configs(MapElitesGPConfig & config) {
 }
 
 /// Initialize world mutator.
-void MapElitesGPWorld::Init_Mutator() {
+void MapElitesSignalGPWorld::Init_Mutator() {
   // We'll use the default mutator set. 
   // Configure program constraints.
   mutator.SetProgMinFuncCnt(PROG_MIN_FUNC_CNT);
@@ -761,7 +753,7 @@ void MapElitesGPWorld::Init_Mutator() {
   // TODO: get rid of elite select version of this function for MAPE
 }
 
-void MapElitesGPWorld::Init_Hardware() {
+void MapElitesSignalGPWorld::Init_Hardware() {
   // Add base set of instructions to instruction library. 
   // Problem-specific instructions will be added when that problem is configured.
   inst_lib.AddInst("Inc", hardware_t::Inst_Inc, 1, "Increment value in local memory Arg1");
@@ -826,7 +818,7 @@ void MapElitesGPWorld::Init_Hardware() {
 }
 
 /// Initialize selected problem. 
-void MapElitesGPWorld::Init_Problem() {
+void MapElitesSignalGPWorld::Init_Problem() {
   switch (PROBLEM_TYPE) {
     case (size_t)PROBLEM_TYPE::CHG_ENV: {
       SetupProblem_ChgEnv();
@@ -847,7 +839,7 @@ void MapElitesGPWorld::Init_Problem() {
   }
 }
 
-void MapElitesGPWorld::Init_WorldMode() {
+void MapElitesSignalGPWorld::Init_WorldMode() {
   switch (RUN_MODE) {
     case (size_t)WORLD_MODE::EA: {
       SetupWorldMode_EA();
@@ -864,7 +856,7 @@ void MapElitesGPWorld::Init_WorldMode() {
   }
 }
 
-void MapElitesGPWorld::SetupProblem_ChgEnv() {
+void MapElitesSignalGPWorld::SetupProblem_ChgEnv() {
   // In the changing environment, problem..
   // Setup environment state tags. 
   switch (ENV_TAG_GEN_METHOD) {
@@ -1022,7 +1014,7 @@ void MapElitesGPWorld::SetupProblem_ChgEnv() {
   }  
 }
 
-void MapElitesGPWorld::SetupProblem_Testcases() {
+void MapElitesSignalGPWorld::SetupProblem_Testcases() {
   // TODO: fix warnings!
   testcases.LoadTestcases(TESTCASES_FPATH);
   std::cout << "Loaded test cases (" << testcases.GetTestcases().size() << ") from: " << TESTCASES_FPATH << std::endl;
@@ -1097,7 +1089,7 @@ void MapElitesGPWorld::SetupProblem_Testcases() {
 
 }
 
-void MapElitesGPWorld::SetupProblem_Logic() {
+void MapElitesSignalGPWorld::SetupProblem_Logic() {
 
   // Configure the tasks. 
   // Zero out task inputs.
@@ -1297,7 +1289,7 @@ void MapElitesGPWorld::SetupProblem_Logic() {
 
 }
 
-void MapElitesGPWorld::SetupWorldMode_EA() {
+void MapElitesSignalGPWorld::SetupWorldMode_EA() {
   
   SetPopStruct_Mixed(true);
   SetAutoMutate([this](size_t pos){ return pos > ELITE_CNT; }); // Mutations will occur before deciding where a new organism is placed. 
@@ -1374,7 +1366,7 @@ void MapElitesGPWorld::SetupWorldMode_EA() {
   
 }
 
-void MapElitesGPWorld::SetupWorldMode_MAPE() {
+void MapElitesSignalGPWorld::SetupWorldMode_MAPE() {
   std::cout << "Configuring world mode: MAPE" << std::endl;
 
   SetAutoMutate();
@@ -1426,7 +1418,7 @@ void MapElitesGPWorld::SetupWorldMode_MAPE() {
 }
 
 // === Run functions ===
-void MapElitesGPWorld::Run() {
+void MapElitesSignalGPWorld::Run() {
   switch(RUN_MODE) {
     case (size_t)WORLD_MODE::EA: 
       // EA-mode does the same thing as MAPE-mode during a run. (we leave the break out and drop into MAPE case)
@@ -1445,7 +1437,7 @@ void MapElitesGPWorld::Run() {
   }
 }
 
-void MapElitesGPWorld::RunStep() {
+void MapElitesSignalGPWorld::RunStep() {
   // could move these onto OnUpdate signal
   do_evaluation_sig.Trigger();
   do_selection_sig.Trigger();
@@ -1453,7 +1445,7 @@ void MapElitesGPWorld::RunStep() {
 }
 
 // === Changing environment utility functions
-void MapElitesGPWorld::SaveChgEnvTags() {
+void MapElitesSignalGPWorld::SaveChgEnvTags() {
   // Save out environment states.
   std::ofstream envtags_ofstream(ENV_TAG_FPATH);
   envtags_ofstream << "tag_id,tag_type,tag\n";
@@ -1466,7 +1458,7 @@ void MapElitesGPWorld::SaveChgEnvTags() {
   envtags_ofstream.close();
 }
 
-void MapElitesGPWorld::LoadChgEnvTags() {
+void MapElitesSignalGPWorld::LoadChgEnvTags() {
   chgenv_info.env_state_tags.resize(ENV_STATE_CNT, tag_t());
   chgenv_info.distraction_sig_tags.resize(ENV_DISTRACTION_SIG_CNT, tag_t());
 
@@ -1523,7 +1515,7 @@ void MapElitesGPWorld::LoadChgEnvTags() {
 }
 
 // === Functions that initialize the population
-void MapElitesGPWorld::InitPop_Random() {
+void MapElitesSignalGPWorld::InitPop_Random() {
   // NOTE: If particular attribute is evolvable, randomize it!
   std::cout << "Randomly initializing population!" << std::endl;
   for (size_t i = 0; i < POP_SIZE; ++i) {
@@ -1539,7 +1531,7 @@ void MapElitesGPWorld::InitPop_Random() {
 }
 
 // WARNING (to future self; 'sup future self): currently no support for loading in custom similarity threshold. 
-void MapElitesGPWorld::InitPop_Ancestor() {
+void MapElitesSignalGPWorld::InitPop_Ancestor() {
   std::cout << "Initializing population from ancestor file (" << ANCESTOR_FPATH << ")!" << std::endl;
   // Configure the ancestor program.
   program_t ancestor_prog(&inst_lib);
@@ -1558,7 +1550,7 @@ void MapElitesGPWorld::InitPop_Ancestor() {
 
 // === Functions to track/record data ===
 /// Snapshot all programs for current update.
-void MapElitesGPWorld::Snapshot_Programs() {
+void MapElitesSignalGPWorld::Snapshot_Programs() {
   std::string snapshot_dir = DATA_DIRECTORY + "pop_" + emp::to_string(GetUpdate());
   mkdir(snapshot_dir.c_str(), ACCESSPERMS);
   // For each program in the population, dump the full program description in a single file.
@@ -1573,7 +1565,7 @@ void MapElitesGPWorld::Snapshot_Programs() {
 }
 
 /// Snapshot population statistics for current update.
-void MapElitesGPWorld::Snapshot_PopulationStats() {
+void MapElitesSignalGPWorld::Snapshot_PopulationStats() {
   std::string snapshot_dir = DATA_DIRECTORY + "pop_" + emp::to_string((int)GetUpdate());
   mkdir(snapshot_dir.c_str(), ACCESSPERMS);
   emp::DataFile file(snapshot_dir + "/pop_" + emp::to_string((int)GetUpdate()) + ".csv");
@@ -1595,7 +1587,7 @@ void MapElitesGPWorld::Snapshot_PopulationStats() {
 }
 
 /// Snapshot dominant program performance over many trials (only makes sense in context of EA run). 
-void MapElitesGPWorld::Snapshot_Dominant() {
+void MapElitesSignalGPWorld::Snapshot_Dominant() {
   emp_assert(RUN_MODE == (size_t)WORLD_MODE::EA);
 
   std::string snapshot_dir = DATA_DIRECTORY + "pop_" + emp::to_string((int)GetUpdate());
@@ -1622,7 +1614,7 @@ void MapElitesGPWorld::Snapshot_Dominant() {
 }
 
 /// Snapshot map from MAP-elites (only makes sense in context of MAP-Elites run). 
-void MapElitesGPWorld::Snapshot_MAP(void) {
+void MapElitesSignalGPWorld::Snapshot_MAP(void) {
   emp_assert(RUN_MODE == (size_t)WORLD_MODE::MAPE);
 
   std::string snapshot_dir = DATA_DIRECTORY + "pop_" + emp::to_string((int)GetUpdate());
@@ -1650,7 +1642,7 @@ void MapElitesGPWorld::Snapshot_MAP(void) {
 }
 
 /// Add a data file to track dominant program. Will track at same interval as fitness file. (only makes sense in context of EA run).
-emp::DataFile & MapElitesGPWorld::AddDominantFile(const std::string & fpath="dominant.csv") {
+emp::DataFile & MapElitesSignalGPWorld::AddDominantFile(const std::string & fpath="dominant.csv") {
   auto & file = SetupFile(fpath);
 
   // TODO: convert to dom_stats thing
