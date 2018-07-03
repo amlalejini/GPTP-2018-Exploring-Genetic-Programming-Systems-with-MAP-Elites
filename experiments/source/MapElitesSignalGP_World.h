@@ -1514,7 +1514,13 @@ void MapElitesSignalGPWorld::SetupWorldMode_MAPE() {
 
   // do_selection_sig
   do_selection_sig.AddAction([this]() {
-    emp::RandomSelect(*this, POP_SIZE);
+    emp::RandomSelectSparse(*this, POP_SIZE);
+    if (GetNumOrgs() >= (GetSize() * 0.5)) {
+      do_selection_sig.Clear();
+      do_selection_sig.AddAction([this]() {
+        emp::RandomSelect(*this, POP_SIZE);
+      });
+    }
   });
   
   OnBeforePlacement([this](org_t & org, size_t pos) {
@@ -1655,9 +1661,12 @@ void MapElitesSignalGPWorld::InitPop_Random() {
   // NOTE: If particular attribute is evolvable, randomize it!
   std::cout << "Randomly initializing population!" << std::endl;
   for (size_t i = 0; i < POP_SIZE; ++i) {
+    // What's smaller? max_fun_len * max_func_cnt, total_prog_length/max_functcount
+    size_t gen_max_func_len = (PROG_MAX_FUNC_LEN <= (size_t)(PROG_MAX_TOTAL_LEN / PROG_MAX_FUNC_CNT)) ? PROG_MAX_FUNC_LEN : (size_t)(PROG_MAX_TOTAL_LEN / PROG_MAX_FUNC_CNT);
+
     program_t prog(emp::GenRandSignalGPProgram(*random_ptr, inst_lib, 
                                                PROG_MIN_FUNC_CNT, PROG_MAX_FUNC_CNT,
-                                               PROG_MIN_FUNC_LEN, PROG_MAX_FUNC_LEN,
+                                               PROG_MIN_FUNC_LEN, gen_max_func_len,
                                                PROG_MIN_ARG_VAL, PROG_MAX_ARG_VAL));
     const double sim_thresh = (EVOLVE_HW_TAG_SIM_THRESH) ? random_ptr->GetDouble(0, 1.0) : HW_MIN_TAG_SIMILARITY_THRESH;
     genome_t ancestor_genome(prog, sim_thresh);
@@ -1693,11 +1702,18 @@ void MapElitesSignalGPWorld::Snapshot_Programs() {
   std::ofstream prog_ofstream(snapshot_dir + "/pop_" + emp::to_string(GetUpdate()) + ".pop");
   for (size_t i = 0; i < GetSize(); ++i) {
     if (!IsOccupied(i)) continue;
-    prog_ofstream << "==={id:" << i << ",fitness:" << CalcFitnessID(i) << ",sim_thresh:" << GetOrg(i).GetTagSimilarityThreshold() << "}===\n";
+    prog_ofstream << "==={id:" << i << ",fitness:" << CalcFitnessID(i) << ",sim_thresh:" << GetOrg(i).GetTagSimilarityThreshold();
+    
+    for (size_t p = 0; p < phen_traits.size(); ++p) {
+      prog_ofstream << "," << phen_traits[p].name + "__bin:" << GetPhenotypes()[phen_traits[p].id].EvalBin(GetOrg(i), trait_bin_sizes[phen_traits[p].id]); 
+    }
+    
+    prog_ofstream << "}===\n";
     org_t & org = GetOrg(i);
     org.GetProgram().PrintProgramFull(prog_ofstream);
   }
   prog_ofstream.close();
+
 }
 
 /// Snapshot population statistics for current update.
