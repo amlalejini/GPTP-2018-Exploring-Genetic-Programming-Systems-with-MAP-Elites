@@ -111,11 +111,4 @@
 
 ## Future Work
 
-- Run MAP-Elites over tournament/lexicase to keep track of where those algorithms have explored over all of evolutionary time. 
-
-
-<script type="text/javascript">
-
-console.log("Hello there");
-
-</script>
+- Run MAP-Elites over tournament/lexicase to keep track of where those algorithms have explored over all of evolutionary time.
