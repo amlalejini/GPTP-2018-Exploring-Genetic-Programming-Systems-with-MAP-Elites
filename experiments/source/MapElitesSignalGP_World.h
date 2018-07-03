@@ -86,6 +86,7 @@ public:
     // For changing environment problem
     double env_match_score;
     emp::vector<size_t> matches_by_env;
+    emp::vector<size_t> time_by_env;
 
     // For testcase problems
     emp::vector<double> testcase_results;
@@ -103,6 +104,7 @@ public:
 
     void SetEnvCnt(size_t val) {
       matches_by_env.resize(val, 0);
+      time_by_env.resize(val, 0);
     }
 
     void Reset() {
@@ -112,6 +114,7 @@ public:
 
       env_match_score = 0;
       for (size_t i = 0; i < matches_by_env.size(); ++i) matches_by_env[i] = 0;
+      for (size_t i = 0; i < time_by_env.size(); ++i) time_by_env[i] = 0;
 
       testcase_results.clear();
 
@@ -1001,6 +1004,7 @@ void MapElitesSignalGPWorld::SetupProblem_ChgEnv() {
       phen_cache.Get(org_id, trial_id).env_match_score += 1;
       phen_cache.Get(org_id, trial_id).matches_by_env[chgenv_info.env_state] += 1;
     }
+    phen_cache.Get(org_id, trial_id).time_by_env[chgenv_info.env_state] += 1;
   });
 
   // Setup instructions/events specific to changing environment problem.
@@ -1040,11 +1044,15 @@ void MapElitesSignalGPWorld::SetupProblem_ChgEnv() {
   for (size_t i = 0; i < ENV_STATE_CNT; ++i) {
     lexicase_fit_set.push_back([this, i](org_t & org) {
       size_t matches = phen_cache.Get(org.GetPos(), 0).matches_by_env[i];
+      size_t env_time = phen_cache.Get(org.GetPos(), 0).time_by_env[i];
+      double match_prob = (env_time > 0) ? matches / env_time : 0;
       for (size_t tID = 1; tID < EVAL_TRIAL_CNT; ++tID) {
         const size_t trial_matches = phen_cache.Get(org.GetPos(), tID).matches_by_env[i];
-        if (trial_matches < matches) matches = trial_matches;
+        const size_t trial_env_time = phen_cache.Get(org.GetPos(), tID).time_by_env[i];
+        const double trial_match_prob = (trial_env_time > 0) ? trial_matches / trial_env_time : 0;
+        if (trial_match_prob < match_prob) match_prob = trial_match_prob; 
       }
-      return matches;
+      return match_prob;
     });
   }
 

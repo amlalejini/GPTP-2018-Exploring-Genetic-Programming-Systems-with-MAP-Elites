@@ -18,7 +18,7 @@ EMP_BUILD_CONFIG( MapElitesGPConfig,
   VALUE(EVAL_TIME, size_t, 256, "How many time steps should we evaluate organisms during each evaluation trial?"),
 
   GROUP(EA_SELECTION, "Settings used to specify how selection should happen."),
-  VALUE(SELECTION_METHOD, size_t, 0, "Which selection scheme should we use to select organisms to reproduce (asexually)? Note: this is only relevant when running in EA mode. \n0: Tournament"),
+  VALUE(SELECTION_METHOD, size_t, 0, "Which selection scheme should we use to select organisms to reproduce (asexually)? Note: this is only relevant when running in EA mode. \n0: Tournament \n1: Lexicase \n2: Random "),
   VALUE(ELITE_CNT, size_t, 0, "How many elites should we select to reproduce no matter what (0=no elite selection)?"),
   VALUE(TOURNAMENT_SIZE, size_t, 2, "How big are tournaments when performing tournament selection?"),
 
