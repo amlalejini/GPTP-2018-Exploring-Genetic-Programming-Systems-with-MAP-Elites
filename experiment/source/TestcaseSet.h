@@ -49,7 +49,7 @@ public:
         return emp::Choose(*random, test_cases.size(), trials);
     }
 
-    std::pair<input_t, output_t> operator[](int i) {
+    std::pair<input_t, output_t> operator[](size_t i) {
         return test_cases[i];
     }
 

@@ -34,26 +34,31 @@ EMP_BUILD_CONFIG( MEGPConfig,
   VALUE(MAX_SIZE, int, 500, "Maximum genome length.")
 )
 
-class MapElitesGPWorld : public emp::World<emp::AvidaGP> {
+class MapElitesScopeGPWorld : public emp::World<emp::AvidaGP> {
 
 public:
 
-    int SEED;
-    int GENOME_SIZE;
-    int EVAL_TIME;
-    int MAX_SIZE;
+
+    enum class STRUCTURE { MIXED=0, MAPE=1 };
+    enum class PROBLEM_TYPE { CHG_ENV=0, TESTCASES=1, LOGIC=2 };
+    enum class SELECTION_METHOD { TOURNAMENT=0, LEXICASE=1, RANDOM=2 };
+
+    size_t EVAL_TIME;
+    size_t MAX_SIZE;
+    size_t WORLD_STRUCTURE;
     long unsigned int SCOPE_RES;
     long unsigned int ENTROPY_RES;
     double INST_MUT_RATE;
     double ARG_MUT_RATE;
     double INS_MUT_RATE;
     double DEL_MUT_RATE;
-    uint32_t TOURNAMENT_SIZE;
-    uint32_t POP_SIZE;
-    uint32_t UPDATES;
-    uint32_t N_TEST_CASES;    
-    std::string SELECTION;
-    std::string PROBLEM;
+    size_t TOURNAMENT_SIZE;
+    size_t POP_SIZE;
+    size_t GENERATIONS;
+    size_t N_TEST_CASES;    
+    size_t SELECTION;
+    size_t PROBLEM_TYPE;
+    std::string TESTCASES_FPATH;
 
     emp::DataNode<double, emp::data::Range> evolutionary_distinctiveness;
 
@@ -69,10 +74,10 @@ public:
         for (size_t testcase = 0; testcase < N_TEST_CASES; ++testcase) {
             org.ResetHardware();
             for (size_t i = 0; i < testcases[testcase].first.size(); i++) {
-                org.SetInput(i, testcases[testcase].first[i]);
+                org.SetInput((int)i, testcases[testcase].first[i]);
             }
             org.Process(EVAL_TIME);
-            int divisor = testcases[testcase].second;
+            double divisor = testcases[testcase].second;
             if (divisor == 0) {
                 divisor = 1;
             }
@@ -104,8 +109,8 @@ public:
         return CalcFitnessID(id);
     };
 
-    MapElitesGPWorld(){;}
-    MapElitesGPWorld(emp::Random & rnd) : emp::World<emp::AvidaGP>(rnd) {;}
+    MapElitesScopeGPWorld() {;}
+    MapElitesScopeGPWorld(emp::Random & rnd) : emp::World<emp::AvidaGP>(rnd) {;}
 
     std::function<int(emp::AvidaGP &)> scope_count_fun = [this](emp::AvidaGP & val){ 
         std::set<size_t> scopes;
@@ -147,31 +152,33 @@ public:
 
     std::function<size_t(size_t)> return_id = [](size_t id){return id;};
 
-    void Setup(MEGPConfig & config) {
+    void Setup(MapElitesGPConfig & config) {
         Reset();
         SetCache();
         InitConfigs(config);
         SetMutFun([this](emp::AvidaGP & org, emp::Random & r){
             int count = 0;
-            for (int i = 0; i < org.GetSize(); ++i) {
+            for (size_t i = 0; i < org.GetSize(); ++i) {
                 if (r.P(INST_MUT_RATE)) {
                     org.RandomizeInst(i, r);
                     count++;
                 }
-                if (r.P(ARG_MUT_RATE)) {
-                    org.SetInst(i, org.GetInst(i).id, r.GetUInt(org.CPU_SIZE), r.GetUInt(org.CPU_SIZE), r.GetUInt(org.CPU_SIZE));
-                    count++;
+                for (size_t j = 0; j < emp::AvidaGP::base_t::INST_ARGS; j++) {
+                    if (r.P(ARG_MUT_RATE)) {
+                        org.genome.sequence[i].args[j] = r.GetUInt(org.CPU_SIZE);        
+                        count++;
+                    }
                 }
                 if (r.P(INS_MUT_RATE)) {
                     if (org.GetSize() < MAX_SIZE) {
-                        org.genome.sequence.insert(org.genome.sequence.begin() + i, emp::AvidaGP::genome_t::sequence_t::value_type());
+                        org.genome.sequence.insert(org.genome.sequence.begin() + (int)i, emp::AvidaGP::genome_t::sequence_t::value_type());
                         org.RandomizeInst(i, r);
                         count++;
                     }
                 }
                 if (r.P(DEL_MUT_RATE)) {
                     if (org.GetSize() > 1) {
-                        org.genome.sequence.erase(org.genome.sequence.begin() + i);
+                        org.genome.sequence.erase(org.genome.sequence.begin() + (int)i);
                         count++;
                     }
                 }
@@ -179,7 +186,8 @@ public:
             }
             return count;
         });
-        SetMutateBeforeBirth();
+        SetPopStruct_Mixed();
+        SetAutoMutate();
         
         #ifndef EMSCRIPTEN
         SetupFitnessFile().SetTimingRepeat(10);
@@ -201,28 +209,28 @@ public:
         trait_file.SetTimingRepeat(10);
         trait_file.PrintHeaderKeys();
 
-        OnUpdate([this](int ud){if (ud % 100 == 0){SnapshotSingleFile(ud);}});
+        OnUpdate([this](size_t ud){if (ud % 100 == 0){SnapshotSingleFile(ud);}});
         #endif
 
-        testcases.LoadTestcases(PROBLEM);
+        testcases.LoadTestcases(TESTCASES_FPATH);
         SetFitFun(goal_function);
         emp::AvidaGP org;
         AddPhenotype("Num Scopes", scope_count_fun, 1, 17);
         AddPhenotype("Entropy", inst_ent_fun, 0, -1*emp::Log2(1.0/org.GetInstLib()->GetSize())+1);
-        if (SELECTION == "MAPELITES") {
+        if (WORLD_STRUCTURE == (size_t)STRUCTURE::MAPE) {
             emp::SetMapElites(*this, {SCOPE_RES, ENTROPY_RES});
         }
 
-        if (SELECTION == "LEXICASE") {
+        if (SELECTION == (size_t)SELECTION_METHOD::LEXICASE) {
 
             for (size_t testcase = 0; testcase < N_TEST_CASES; ++testcase) {
                 fit_set.push_back([testcase, this](emp::AvidaGP & org) {
                     org.ResetHardware();
                     for (size_t i = 0; i < testcases[testcase].first.size(); i++) {
-                        org.SetInput(i, testcases[testcase].first[i]);
+                        org.SetInput((int)i, testcases[testcase].first[i]);
                     }
                     org.Process(EVAL_TIME);
-                    int divisor = testcases[testcase].second;
+                    double divisor = testcases[testcase].second;
                     if (divisor == 0) {
                         divisor = 1;
                     }
@@ -271,30 +279,33 @@ public:
         prog_ofstream.close();
     }
 
-    void InitConfigs(MEGPConfig & config) {
-        SEED = config.SEED();
+    void InitConfigs(MapElitesGPConfig & config) {
         TOURNAMENT_SIZE = config.TOURNAMENT_SIZE();
-        GENOME_SIZE = config.GENOME_SIZE();
         EVAL_TIME = config.EVAL_TIME();
-        MAX_SIZE = config.MAX_SIZE();
-        SCOPE_RES = config.SCOPE_RES();
-        ENTROPY_RES = config.ENTROPY_RES();
-        INST_MUT_RATE = config.INST_MUT_RATE();
-        ARG_MUT_RATE = config.ARG_MUT_RATE();
-        INS_MUT_RATE = config.INS_MUT_RATE();
-        DEL_MUT_RATE = config.DEL_MUT_RATE();
+        MAX_SIZE = config.PROG_MAX_TOTAL_LEN();
+        SCOPE_RES = config.MAPE_AXIS_SIZE__FUNC_ENTERED_ENTROPY();
+        ENTROPY_RES = config.MAPE_AXIS_SIZE__INST_ENTROPY();
+        INST_MUT_RATE = config.INST_SUB__PER_INST();
+        ARG_MUT_RATE = config.ARG_SUB__PER_ARG();
+        INS_MUT_RATE = config.INST_INS__PER_INST();
+        DEL_MUT_RATE = config.INST_DEL__PER_INST();
         POP_SIZE = config.POP_SIZE();
-        UPDATES = config.UPDATES();
-        N_TEST_CASES = config.N_TEST_CASES();    
-        SELECTION = config.SELECTION();
-        PROBLEM = config.PROBLEM();        
+        GENERATIONS = config.GENERATIONS();
+        N_TEST_CASES = config.NUM_TEST_CASES();    
+        SELECTION = config.SELECTION_METHOD();
+        PROBLEM_TYPE = config.PROBLEM_TYPE();        
+        TESTCASES_FPATH = config.TESTCASES_FPATH();
+        WORLD_STRUCTURE = config.WORLD_STRUCTURE();        
     }
 
     void InitPop() {
         emp::Random & random = GetRandom();
         for (int i = 0 ; i < POP_SIZE; i++) {
+            size_t len = random.GetUInt(1, MAX_SIZE);
             emp::AvidaGP cpu;
-            cpu.PushRandom(random, GENOME_SIZE);
+            for (int j = 0; j < len; j++) {
+                cpu.PushRandom(random, 1);
+            }
             Inject(cpu.GetGenome());
         }
     }
@@ -302,13 +313,17 @@ public:
     void RunStep() {
         evolutionary_distinctiveness.Reset();
         std::cout << update << std::endl;
-        if (SELECTION == "MAPELITES") {
-            emp::RandomSelectSparse(*this, POP_SIZE);
-        } else if (SELECTION =="TOURNAMENT") {
+        if (WORLD_STRUCTURE == (size_t)STRUCTURE::MAPE) {
+            if (num_orgs < .5*GetSize()) {
+                emp::RandomSelectSparse(*this, POP_SIZE);
+            } else {
+                emp::RandomSelect(*this, POP_SIZE);                
+            }
+        } else if (SELECTION == (size_t)SELECTION_METHOD::TOURNAMENT) {
             emp::TournamentSelect(*this, TOURNAMENT_SIZE, POP_SIZE);
-        } else if (SELECTION =="RANDOM") {
+        } else if (SELECTION == (size_t)SELECTION_METHOD::RANDOM) {
             emp::RandomSelect(*this, POP_SIZE);
-        } else if (SELECTION =="LEXICASE") {
+        } else if (SELECTION == (size_t)SELECTION_METHOD::LEXICASE) {
             emp::LexicaseSelect(*this, fit_set, POP_SIZE);
         } else {
             emp_assert(false && "INVALID SELECTION SCEHME", SELECTION);
@@ -318,7 +333,7 @@ public:
     }
 
     void Run() {
-        for (size_t u = 0; u <= UPDATES; u++) {
+        for (size_t u = 0; u <= GENERATIONS; u++) {
             RunStep();
         }  
     }

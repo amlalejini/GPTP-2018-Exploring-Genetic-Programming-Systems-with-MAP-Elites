@@ -13,11 +13,11 @@ enum class REPRESENTATION_TYPE {SignalGP=0, ScopeGP=1};
 
 int main(int argc, char* argv[])
 {
-  MEGPConfig config;
+  MapElitesGPConfig config;
   auto args = emp::cl::ArgManager(argc, argv);
-  if (args.ProcessConfigOptions(config, std::cout, "MEGPConfig.cfg", "MEGP-macros.h") == false) exit(0);
+  if (args.ProcessConfigOptions(config, std::cout, "MapElitesGPConfig.cfg", "MapElitesGP-macros.h") == false) exit(0);
   if (args.TestUnknown() == false) exit(0);  // If there are leftover args, throw an error.
-  emp::Random rnd(config.SEED());
+  emp::Random rnd(config.RANDOM_SEED());
   
   std::cout << "==============================" << std::endl;
   std::cout << "|    How am I configured?    |" << std::endl;
