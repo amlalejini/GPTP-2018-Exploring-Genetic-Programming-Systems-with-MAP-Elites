@@ -32,6 +32,16 @@ public:
     Genome(const program_t & _p, double _s=0) : program(_p), tag_sim_thresh(_s) { ; }
     Genome(Genome && in) : program(in.program), tag_sim_thresh(in.tag_sim_thresh) { ; }
     Genome(const Genome & in) : program(in.program), tag_sim_thresh(in.tag_sim_thresh) { ; }
+
+    bool operator==(const Genome & in) const { return program == in.program && tag_sim_thresh == in.tag_sim_thresh; }
+    bool operator!=(const Genome & in) const { return !(*this == in); }
+    bool operator<(const Genome & other) const {
+        if (program == other.program) {
+          return tag_sim_thresh < other.tag_sim_thresh;
+        } else {
+          return program < other.program;
+        } 
+    }
   };
 
 protected:

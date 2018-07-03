@@ -49,7 +49,7 @@ public:
 
   enum class WORLD_MODE { EA=0, MAPE=1 };
   enum class PROBLEM_TYPE { CHG_ENV=0, TESTCASES=1, LOGIC=2 };
-  enum class SELECTION_METHOD { TOURNAMENT=0 };
+  enum class SELECTION_METHOD { TOURNAMENT=0, LEXICASE=1, RANDOM=2 };
   enum class POP_INIT_METHOD { RANDOM=0, ANCESTOR=1 };
   enum class EVAL_TRIAL_AGG_METHOD { MIN=0, MAX=1, AVG=2 }; 
   enum class CHGENV_TAG_GEN_METHOD { RANDOM=0, LOAD=1 }; 
@@ -85,6 +85,7 @@ public:
 
     // For changing environment problem
     double env_match_score;
+    emp::vector<size_t> matches_by_env;
 
     // For testcase problems
     emp::vector<double> testcase_results;
@@ -100,12 +101,17 @@ public:
       logic_tasks_done_by_task.resize(task_cnt, 0);
     }
 
+    void SetEnvCnt(size_t val) {
+      matches_by_env.resize(val, 0);
+    }
+
     void Reset() {
       score = 0;
       function_entries.clear();
       functions_used_set.clear();
 
       env_match_score = 0;
+      for (size_t i = 0; i < matches_by_env.size(); ++i) matches_by_env[i] = 0;
 
       testcase_results.clear();
 
@@ -157,6 +163,7 @@ protected:
   bool ENV_SENSORS;
   // == Testcase problem group ==
   size_t NUM_TEST_CASES;
+  bool SHUFFLE_TEST_CASES;
   // == Program constraints group ==
   size_t PROG_MIN_FUNC_CNT;
   size_t PROG_MAX_FUNC_CNT;
@@ -188,6 +195,8 @@ protected:
 
   emp::SignalGPMutator<org_t::TAG_WIDTH> mutator;
   emp::vector<mut_fun_t> mut_funs;
+
+  emp::vector<std::function<double(org_t &)>> lexicase_fit_set;
 
   inst_lib_t inst_lib;
   event_lib_t event_lib;
@@ -270,6 +279,8 @@ protected:
   emp::Signal<void(void)> do_evaluation_sig;    ///< Specific to run mode. Setup by RUN_MODE/WORLD_MODE setup. 
   emp::Signal<void(void)> do_selection_sig;     ///< Specific to run mode. Setup by RUN_MODE/WORLD_MODE setup.
   emp::Signal<void(void)> do_world_update_sig;  ///< Generic. Setup during general Setup.  
+
+  emp::Signal<void(void)> begin_pop_evaluation_sig; 
 
   // Data-tracking signals
   emp::Signal<void(void)> do_pop_snapshot_sig;
@@ -439,6 +450,10 @@ void MapElitesSignalGPWorld::Setup(MapElitesGPConfig & config) {
       trait_bin_sizes.emplace_back(MAPE_AXIS_SIZE__FUNC_ENTERED_ENTROPY);
     }
 
+  });
+
+  do_evaluation_sig.AddAction([this]() {
+    begin_pop_evaluation_sig.Trigger();
   });
 
   // Configure world update signal. 
@@ -676,6 +691,7 @@ void MapElitesSignalGPWorld::Init_Configs(MapElitesGPConfig & config) {
   ENV_SENSORS = config.ENV_SENSORS();
 
   NUM_TEST_CASES = config.NUM_TEST_CASES();
+  SHUFFLE_TEST_CASES = config.SHUFFLE_TEST_CASES();
 
   PROG_MIN_FUNC_CNT = config.PROG_MIN_FUNC_CNT();
   PROG_MAX_FUNC_CNT = config.PROG_MAX_FUNC_CNT();
@@ -968,6 +984,12 @@ void MapElitesSignalGPWorld::SetupProblem_ChgEnv() {
     return phen.env_match_score;
   };
 
+  do_pop_init_sig.AddAction([this]() {
+    for (size_t i = 0; i < phen_cache.GetCache().size(); ++i) {
+      phen_cache.GetCache()[i].SetEnvCnt(ENV_STATE_CNT); 
+    }
+  });
+
   // Reset the environment at the begining of a trial
   begin_org_trial_sig.AddAction([this](org_t & org) {
     chgenv_info.ResetEnv(*random_ptr);
@@ -977,6 +999,7 @@ void MapElitesSignalGPWorld::SetupProblem_ChgEnv() {
     const size_t org_id = org.GetPos();
     if ((size_t)eval_hw->GetTrait(org_t::ORG_STATE) == chgenv_info.env_state) {
       phen_cache.Get(org_id, trial_id).env_match_score += 1;
+      phen_cache.Get(org_id, trial_id).matches_by_env[chgenv_info.env_state] += 1;
     }
   });
 
@@ -1011,7 +1034,20 @@ void MapElitesSignalGPWorld::SetupProblem_ChgEnv() {
           state.SetLocal(inst.args[0], this->chgenv_info.env_state==i);
         }, 1, "Sense if current environment state is " + emp::to_string(i));
     }
-  }  
+  }
+  
+  // Add lexicase fit set
+  for (size_t i = 0; i < ENV_STATE_CNT; ++i) {
+    lexicase_fit_set.push_back([this, i](org_t & org) {
+      size_t matches = phen_cache.Get(org.GetPos(), 0).matches_by_env[i];
+      for (size_t tID = 1; tID < EVAL_TRIAL_CNT; ++tID) {
+        const size_t trial_matches = phen_cache.Get(org.GetPos(), tID).matches_by_env[i];
+        if (trial_matches < matches) matches = trial_matches;
+      }
+      return matches;
+    });
+  }
+
 }
 
 void MapElitesSignalGPWorld::SetupProblem_Testcases() {
@@ -1034,9 +1070,13 @@ void MapElitesSignalGPWorld::SetupProblem_Testcases() {
     phen_cache.Get(org.GetPos(), trial_id).Reset();
   });
   
+  if (SHUFFLE_TEST_CASES) {
+    begin_pop_evaluation_sig.AddAction([this]() {
+      emp::Shuffle(*random_ptr, testcase_ids);
+    });
+  }
+  
   do_org_trial_sig.AddAction([this](org_t & org) {
-    // TODO: pick random subset of testcases
-    emp::Shuffle(*random_ptr, testcase_ids);
     for (size_t t = 0; t < NUM_TEST_CASES; ++t) {
       size_t testcase = testcase_ids[t];
       ResetEvalHW();
@@ -1059,7 +1099,6 @@ void MapElitesSignalGPWorld::SetupProblem_Testcases() {
       double output = eval_hw->GetTrait(trait_id_t::PROBLEM_OUTPUT);
       bool output_set = (bool)eval_hw->GetTrait(trait_id_t::OUTPUT_SET);
 
-      // TODO: talk to Emily about making this fitness assignment more specific to benchmark. 
       double result = 0;
       if (output_set) {
         int divisor = (int)testcases.GetOutput(testcase);
@@ -1087,6 +1126,19 @@ void MapElitesSignalGPWorld::SetupProblem_Testcases() {
     }, 1, "Submit output for given input.");
   // TODO: load input
 
+
+  // Add fitness functions (if we're using lexicase!)
+  // NOTE: for each test case, lexicase uses your worst performance across trials on that testcase. 
+  for (size_t i = 0; i < NUM_TEST_CASES; ++i) {
+    lexicase_fit_set.push_back([this, i](org_t & org) {
+      double case_score = phen_cache.Get(org.GetPos(), 0).testcase_results[i];
+      for (size_t tID = 1; tID < EVAL_TRIAL_CNT; ++tID) {
+        double this_score = phen_cache.Get(org.GetPos(), tID).testcase_results[i];
+        if (case_score > this_score) case_score = this_score;
+      }
+      return case_score;
+    });
+  }
 }
 
 void MapElitesSignalGPWorld::SetupProblem_Logic() {
@@ -1216,7 +1268,30 @@ void MapElitesSignalGPWorld::SetupProblem_Logic() {
     phen.score = calc_score(org, phen);
   });
 
-  
+  // Add fitness functions (if we're using lexicase!)
+  // NOTE: for each test case, lexicase uses your worst performance across trials on that testcase. 
+  for (size_t i = 0; i < task_set.GetSize(); ++i) {
+    lexicase_fit_set.push_back([this, i](org_t & org) {
+      size_t task_done = phen_cache.Get(org.GetPos(), 0).logic_tasks_done_by_task[i];
+      for (size_t tID = 1; tID < EVAL_TRIAL_CNT; ++tID) {
+        size_t this_trial = phen_cache.Get(org.GetPos(), tID).logic_tasks_done_by_task[i];
+        if (task_done > this_trial) task_done = this_trial;
+      }
+      return (task_done > 0) ? 1 : 0;
+    });
+  }
+  lexicase_fit_set.push_back([this](org_t & org) {
+    size_t time_tasks_done = 0;
+    // We'll always return the worst performance over multiple trials (i.e., the largest time_all_logic_tasks_done)
+    for (size_t tID = 0; tID < EVAL_TRIAL_CNT; ++tID) {
+      const size_t this_time = phen_cache.Get(org.GetPos(), tID).time_all_logic_tasks_done; 
+      const size_t this_tasks = phen_cache.Get(org.GetPos(), tID).unique_logic_tasks_done;
+      if (this_tasks < task_set.GetSize()) return 0.0; // Org didn't complete all tasks, return failure!
+      if (this_time > time_tasks_done) time_tasks_done = this_time; // Org completed all tasks in this trial, update time if we need to!
+    }
+    return (double)(EVAL_TIME - time_tasks_done);
+  });
+
   #ifndef EMSCRIPTEN
   // Things to record:
   //  - time all logic tasks done
@@ -1313,6 +1388,18 @@ void MapElitesSignalGPWorld::SetupWorldMode_EA() {
       do_selection_sig.AddAction([this]() {
         if (ELITE_CNT) emp::EliteSelect(*this, ELITE_CNT, 1);
         emp::TournamentSelect(*this, TOURNAMENT_SIZE, POP_SIZE-ELITE_CNT);
+      });
+      break;
+    }
+    case (size_t)SELECTION_METHOD::LEXICASE: {
+      do_selection_sig.AddAction([this]() {
+        emp::LexicaseSelect(*this, lexicase_fit_set, POP_SIZE);
+      });
+      break;
+    }
+    case (size_t)SELECTION_METHOD::RANDOM: {
+      do_selection_sig.AddAction([this]() {
+        emp::RandomSelect(*this, POP_SIZE);
       });
       break;
     }

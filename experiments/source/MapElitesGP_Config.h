@@ -50,6 +50,7 @@ EMP_BUILD_CONFIG( MapElitesGPConfig,
 
   GROUP(TESTCASES_PROBLEM, "Settings specific to test case problems."),
   VALUE(NUM_TEST_CASES, size_t, 10, "How many test cases should we use when evaluating an organism?"), 
+  VALUE(SHUFFLE_TEST_CASES, bool, false, "Should we shuffle test cases used to evaluate agents every generation? "),
 
   GROUP(PROGRAM_CONSTRAINTS, "SignalGP program constraits that mutation operators/initialization will respect."),
   VALUE(PROG_MIN_FUNC_CNT, size_t, 1, "Minimum number of functions mutations are allowed to reduce a SignalGP program to."),
