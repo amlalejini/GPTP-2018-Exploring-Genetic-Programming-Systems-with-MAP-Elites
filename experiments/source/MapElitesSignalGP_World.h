@@ -276,6 +276,10 @@ protected:
       }
   } chgenv_info;
 
+  struct TestcaseProblemInfo {
+    size_t cur_testcase;
+  } testcase_info;
+
   // Run signals
   emp::Signal<void(void)> do_begin_run_sig; 
   emp::Signal<void(void)> do_pop_init_sig;
@@ -1068,8 +1072,6 @@ void MapElitesSignalGPWorld::SetupProblem_Testcases() {
 
   // Setup fitness stuff
   // do_begin_eval
-  //  begin_trial: reset hardware
-  //  - TODO: spawn core (main) w/appropriate input
   begin_org_trial_sig.Clear();
   do_org_trial_sig.Clear();
 
@@ -1087,6 +1089,8 @@ void MapElitesSignalGPWorld::SetupProblem_Testcases() {
   do_org_trial_sig.AddAction([this](org_t & org) {
     for (size_t t = 0; t < NUM_TEST_CASES; ++t) {
       size_t testcase = testcase_ids[t];
+      testcase_info.cur_testcase = testcase;
+
       ResetEvalHW();
       eval_hw->SetTrait(trait_id_t::ORG_ID, org.GetPos());
       // Fill out input memory with testcase info. 
@@ -1097,10 +1101,16 @@ void MapElitesSignalGPWorld::SetupProblem_Testcases() {
       // Spawn main core!
       eval_hw->SpawnCore(tag_t(), 0.0, input_mem, true);
 
+      // std::cout << "====INITIAL STATE====" << std::endl;
+      // eval_hw->PrintState();
+
       // Process!
       for (eval_time = 0; eval_time < EVAL_TIME; ++eval_time) {
         // Advance agent.
         do_org_advance_sig.Trigger(org);
+
+        // std::cout << "====" << eval_time << "====" << std::endl;
+        // eval_hw->PrintState();
       }
 
       // Check output
@@ -1111,9 +1121,19 @@ void MapElitesSignalGPWorld::SetupProblem_Testcases() {
       if (output_set) {
         int divisor = (int)testcases.GetOutput(testcase);
         if (divisor == 0) divisor = 1;
-        result = 1 / (std::abs(output - testcases.GetOutput(testcase))/divisor);
+        result = std::abs(1 / (std::abs(output - testcases.GetOutput(testcase))/divisor));
       }
       if (result > 1000) result = 1000;
+      
+      // std::cout << "Input =";
+      // for (size_t i = 0; i < testcases.GetInput(testcase).size(); ++i) {
+      //   std::cout << " " << testcases.GetInput(testcase)[i];
+      // }
+      // std::cout << std::endl;
+      // std::cout << "Cor Output = " << (int)testcases.GetOutput(testcase) << std::endl;
+      // std::cout << "Org Output = " << output << std::endl;
+      // std::cout << "Result = " << result << std::endl;
+
 
       phenotype_t & phen = phen_cache.Get(org.GetPos(), trial_id);
       phen.testcase_results.emplace_back(result);
@@ -1132,7 +1152,28 @@ void MapElitesSignalGPWorld::SetupProblem_Testcases() {
       hw.SetTrait(trait_id_t::PROBLEM_OUTPUT, state.GetLocal(inst.args[0]));
       hw.SetTrait(trait_id_t::OUTPUT_SET, 1);
     }, 1, "Submit output for given input.");
-  // TODO: load input
+  // - Load testcase problem input to input memory
+  inst_lib.AddInst("LoadToInput", [this](hardware_t & hw, const inst_t & inst) {
+    state_t & state = hw.GetCurState();
+    const size_t cur_test = testcase_info.cur_testcase;
+    for (size_t i = 0; i < testcases.GetInput(cur_test).size(); ++i) {
+      state.SetInput(inst.args[0] + (int)i, (double)testcases.GetInput(cur_test)[i]);   
+    }
+  }, 1, "INPUT[ARG1:TESTCASE_INPUTS] = TESTCASE_INPUTS");
+  // - load testcase problem input to working memory
+  inst_lib.AddInst("LoadToWorking", [this](hardware_t & hw, const inst_t & inst) {
+    state_t & state = hw.GetCurState();
+    const size_t cur_test = testcase_info.cur_testcase;
+    for (size_t i = 0; i < testcases.GetInput(cur_test).size(); ++i) {
+      state.SetLocal(inst.args[0] + (int)i, (double)testcases.GetInput(cur_test)[i]);   
+    }
+  }, 1, "WM[ARG1:TESTCASE_INPUTS] = TESTCASE_INPUTS");
+  // - get the number of inputs for this testcase problem inputs
+  inst_lib.AddInst("InputCnt", [this](hardware_t & hw, const inst_t & inst) {
+    state_t & state = hw.GetCurState();
+    const size_t cur_test = testcase_info.cur_testcase;
+    state.SetLocal(inst.args[0], testcases.GetInput(cur_test).size());
+  }, 1, "WM[ARG1] = InputCnt");
 
 
   // Add fitness functions (if we're using lexicase!)

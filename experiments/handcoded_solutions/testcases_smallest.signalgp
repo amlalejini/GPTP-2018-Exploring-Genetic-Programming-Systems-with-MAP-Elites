@@ -1,0 +1,13 @@
+Fn-0000000000000000:
+  InputCnt(0)
+  LoadToInput(0)
+  Input(0, 16)
+  Countdown(0)
+    DerefInput(0, 1)
+    TestLess(1, 16, 8)
+    If(8)
+      CopyMem(1,16)
+    Close
+  Close
+  SubmitResult(16)
+  Terminate
