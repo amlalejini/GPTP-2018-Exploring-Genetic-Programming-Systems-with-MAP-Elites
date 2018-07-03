@@ -1,5 +1,5 @@
 # Project-specific settings
-PROJECT := SignalGP_MAPE_EXP
+PROJECT := MAPE_EXP
 EMP_DIR := ../../Empirical/source
 
 # Flags to use regardless of compiler

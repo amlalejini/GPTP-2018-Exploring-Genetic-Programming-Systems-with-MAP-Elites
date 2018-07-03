@@ -127,7 +127,7 @@ public:
 protected:
   // Localized configurable parameters
   // == General Group ==
-  size_t RUN_MODE;
+  size_t WORLD_STRUCTURE;
   int RANDOM_SEED;
   size_t POP_SIZE;
   size_t GENERATIONS;
@@ -283,8 +283,8 @@ protected:
   // Run signals
   emp::Signal<void(void)> do_begin_run_sig; 
   emp::Signal<void(void)> do_pop_init_sig;
-  emp::Signal<void(void)> do_evaluation_sig;    ///< Specific to run mode. Setup by RUN_MODE/WORLD_MODE setup. 
-  emp::Signal<void(void)> do_selection_sig;     ///< Specific to run mode. Setup by RUN_MODE/WORLD_MODE setup.
+  emp::Signal<void(void)> do_evaluation_sig;    ///< Specific to run mode. Setup by WORLD_STRUCTURE/WORLD_MODE setup. 
+  emp::Signal<void(void)> do_selection_sig;     ///< Specific to run mode. Setup by WORLD_STRUCTURE/WORLD_MODE setup.
   emp::Signal<void(void)> do_world_update_sig;  ///< Generic. Setup during general Setup.  
 
   emp::Signal<void(void)> begin_pop_evaluation_sig; 
@@ -651,7 +651,7 @@ void MapElitesSignalGPWorld::Setup(MapElitesGPConfig & config) {
 }
 
 void MapElitesSignalGPWorld::Init_Configs(MapElitesGPConfig & config) {
-  RUN_MODE = config.RUN_MODE();
+  WORLD_STRUCTURE = config.WORLD_STRUCTURE();
   RANDOM_SEED = config.RANDOM_SEED();
   POP_SIZE = config.POP_SIZE();
   GENERATIONS = config.GENERATIONS();
@@ -855,7 +855,7 @@ void MapElitesSignalGPWorld::Init_Problem() {
 }
 
 void MapElitesSignalGPWorld::Init_WorldMode() {
-  switch (RUN_MODE) {
+  switch (WORLD_STRUCTURE) {
     case (size_t)WORLD_MODE::WELL_MIXED: {
       SetupWorldMode_WellMixed();
       break;
@@ -865,7 +865,7 @@ void MapElitesSignalGPWorld::Init_WorldMode() {
       break;
     }
     default: {
-      std::cout << "Unrecognized run mode (" << RUN_MODE << "). Exiting..." << std::endl;
+      std::cout << "Unrecognized run mode (" << WORLD_STRUCTURE << "). Exiting..." << std::endl;
       exit(-1);
     }
   }
@@ -1357,7 +1357,7 @@ void MapElitesSignalGPWorld::SetupProblem_Logic() {
         return total / EVAL_TRIAL_CNT;
       }, "");
 
-    if (RUN_MODE == (size_t)WORLD_MODE::WELL_MIXED) {
+    if (WORLD_STRUCTURE == (size_t)WORLD_MODE::WELL_MIXED) {
       dom_file_stats.emplace_back("time_all_logic_tasks_completed", 
         [this]() { 
           double total = 0;
@@ -1387,7 +1387,7 @@ void MapElitesSignalGPWorld::SetupProblem_Logic() {
           return total / EVAL_TRIAL_CNT; 
         }, "");
       
-      if (RUN_MODE == (size_t)WORLD_MODE::WELL_MIXED) {
+      if (WORLD_STRUCTURE == (size_t)WORLD_MODE::WELL_MIXED) {
         dom_file_stats.emplace_back("completed_"+task_set.GetName(taskID), 
           [this, taskID]() { 
             double total = 0;
@@ -1553,7 +1553,7 @@ void MapElitesSignalGPWorld::SetupWorldMode_MAPE() {
 
 // === Run functions ===
 void MapElitesSignalGPWorld::Run() {
-  switch(RUN_MODE) {
+  switch(WORLD_STRUCTURE) {
     case (size_t)WORLD_MODE::WELL_MIXED: 
       // Well-mixed world mode does the same thing as MAPE-mode during a run. (we leave the break out and drop into MAPE case)
     case (size_t)WORLD_MODE::MAPE: {
@@ -1565,7 +1565,7 @@ void MapElitesSignalGPWorld::Run() {
       break;
     }
     default: {
-      std::cout << "Unrecognized run mode (" << RUN_MODE << "). Exiting..." << std::endl;
+      std::cout << "Unrecognized run mode (" << WORLD_STRUCTURE << "). Exiting..." << std::endl;
       exit(-1);
     }
   }
@@ -1732,7 +1732,7 @@ void MapElitesSignalGPWorld::Snapshot_PopulationStats() {
 
 /// Snapshot dominant program performance over many trials (only makes sense in context of non-MAPE run). 
 void MapElitesSignalGPWorld::Snapshot_Dominant() {
-  emp_assert(RUN_MODE == (size_t)WORLD_MODE::WELL_MIXED);
+  emp_assert(WORLD_STRUCTURE == (size_t)WORLD_MODE::WELL_MIXED);
 
   std::string snapshot_dir = DATA_DIRECTORY + "pop_" + emp::to_string((int)GetUpdate());
   mkdir(snapshot_dir.c_str(), ACCESSPERMS);
@@ -1759,7 +1759,7 @@ void MapElitesSignalGPWorld::Snapshot_Dominant() {
 
 /// Snapshot map from MAP-elites (only makes sense in context of MAP-Elites run). 
 void MapElitesSignalGPWorld::Snapshot_MAP(void) {
-  emp_assert(RUN_MODE == (size_t)WORLD_MODE::MAPE);
+  emp_assert(WORLD_STRUCTURE == (size_t)WORLD_MODE::MAPE);
 
   std::string snapshot_dir = DATA_DIRECTORY + "pop_" + emp::to_string((int)GetUpdate());
   mkdir(snapshot_dir.c_str(), ACCESSPERMS);
