@@ -47,7 +47,7 @@ public:
   static constexpr uint32_t MIN_LOGIC_TASK_INPUT = 0;
   static constexpr uint32_t MAX_LOGIC_TASK_INPUT = 1000000000;
 
-  enum class WORLD_MODE { EA=0, MAPE=1 };
+  enum class WORLD_MODE { WELL_MIXED=0, MAPE=1 };
   enum class PROBLEM_TYPE { CHG_ENV=0, TESTCASES=1, LOGIC=2 };
   enum class SELECTION_METHOD { TOURNAMENT=0, LEXICASE=1, RANDOM=2 };
   enum class POP_INIT_METHOD { RANDOM=0, ANCESTOR=1 };
@@ -314,7 +314,7 @@ protected:
   void SetupProblem_Testcases();
   void SetupProblem_Logic();
 
-  void SetupWorldMode_EA();
+  void SetupWorldMode_WellMixed();
   void SetupWorldMode_MAPE();
 
   // === Population initialization (things that put stuff into the population) ===
@@ -332,13 +332,13 @@ protected:
   /// Snapshot population statistics for current update.
   void Snapshot_PopulationStats();
   
-  /// Snapshot dominant program performance over many trials (only makes sense in context of EA run). 
+  /// Snapshot dominant program performance over many trials (only makes sense in context of a non-MAPE run). 
   void Snapshot_Dominant();
 
   /// Snapshot map from MAP-elites (only makes sense in context of MAP-Elites run). 
   void Snapshot_MAP();
 
-  /// Add a data file to track dominant program. Will track at same interval as fitness file. (only makes sense in context of EA run).
+  /// Add a data file to track dominant program. Will track at same interval as fitness file. (only makes sense in context of non-MAPE run).
   emp::DataFile & AddDominantFile(const std::string & fpath);
 
   // === Logic task problem utility functions ===
@@ -550,7 +550,7 @@ void MapElitesSignalGPWorld::Setup(MapElitesGPConfig & config) {
   Init_Mutator();       // Configure SignalGPMutator, mutation function.
   Init_Hardware();      // Configure SignalGP hardware. 
   Init_Problem();       // Configure problem.
-  Init_WorldMode();      // Configure run (MAP-Eltes vs. EA, etc)
+  Init_WorldMode();      // Configure run (MAP-Eltes vs. Well-mixed population (standard evolutionary algorithm), etc)
   
   #ifndef EMSCRIPTEN
   // Make a data directory. 
@@ -587,14 +587,6 @@ void MapElitesSignalGPWorld::Setup(MapElitesGPConfig & config) {
   });
 
   #endif
-
-  // - Setup data tracking (but only in native mode)
-  //    - Pop snapshot
-  //    - Fitness file
-  //    - Dominant file
-  // - Setup selection
-  //   - MAPE vs. EA
-  //      - Setup phen cache size
 
   // Setup the fitness function
   switch (EVAL_TRIAL_AGG_METHOD) {
@@ -864,8 +856,8 @@ void MapElitesSignalGPWorld::Init_Problem() {
 
 void MapElitesSignalGPWorld::Init_WorldMode() {
   switch (RUN_MODE) {
-    case (size_t)WORLD_MODE::EA: {
-      SetupWorldMode_EA();
+    case (size_t)WORLD_MODE::WELL_MIXED: {
+      SetupWorldMode_WellMixed();
       break;
     }
     case (size_t)WORLD_MODE::MAPE: {
@@ -1365,7 +1357,7 @@ void MapElitesSignalGPWorld::SetupProblem_Logic() {
         return total / EVAL_TRIAL_CNT;
       }, "");
 
-    if (RUN_MODE == (size_t)WORLD_MODE::EA) {
+    if (RUN_MODE == (size_t)WORLD_MODE::WELL_MIXED) {
       dom_file_stats.emplace_back("time_all_logic_tasks_completed", 
         [this]() { 
           double total = 0;
@@ -1395,7 +1387,7 @@ void MapElitesSignalGPWorld::SetupProblem_Logic() {
           return total / EVAL_TRIAL_CNT; 
         }, "");
       
-      if (RUN_MODE == (size_t)WORLD_MODE::EA) {
+      if (RUN_MODE == (size_t)WORLD_MODE::WELL_MIXED) {
         dom_file_stats.emplace_back("completed_"+task_set.GetName(taskID), 
           [this, taskID]() { 
             double total = 0;
@@ -1413,7 +1405,7 @@ void MapElitesSignalGPWorld::SetupProblem_Logic() {
 
 }
 
-void MapElitesSignalGPWorld::SetupWorldMode_EA() {
+void MapElitesSignalGPWorld::SetupWorldMode_WellMixed() {
   
   SetPopStruct_Mixed(true);
   SetAutoMutate([this](size_t pos){ return pos > ELITE_CNT; }); // Mutations will occur before deciding where a new organism is placed. 
@@ -1462,7 +1454,7 @@ void MapElitesSignalGPWorld::SetupWorldMode_EA() {
     return agg_scores(org);
   });
 
-  // EA-specific data tracking
+  // Well-mixed-specific data tracking
   #ifndef EMSCRIPTEN
   // Setup dominant snapshotting.
   do_pop_snapshot_sig.AddAction([this]() { Snapshot_Dominant(); }); 
@@ -1562,8 +1554,8 @@ void MapElitesSignalGPWorld::SetupWorldMode_MAPE() {
 // === Run functions ===
 void MapElitesSignalGPWorld::Run() {
   switch(RUN_MODE) {
-    case (size_t)WORLD_MODE::EA: 
-      // EA-mode does the same thing as MAPE-mode during a run. (we leave the break out and drop into MAPE case)
+    case (size_t)WORLD_MODE::WELL_MIXED: 
+      // Well-mixed world mode does the same thing as MAPE-mode during a run. (we leave the break out and drop into MAPE case)
     case (size_t)WORLD_MODE::MAPE: {
       do_begin_run_sig.Trigger();
       do_pop_init_sig.Trigger();
@@ -1738,9 +1730,9 @@ void MapElitesSignalGPWorld::Snapshot_PopulationStats() {
 
 }
 
-/// Snapshot dominant program performance over many trials (only makes sense in context of EA run). 
+/// Snapshot dominant program performance over many trials (only makes sense in context of non-MAPE run). 
 void MapElitesSignalGPWorld::Snapshot_Dominant() {
-  emp_assert(RUN_MODE == (size_t)WORLD_MODE::EA);
+  emp_assert(RUN_MODE == (size_t)WORLD_MODE::WELL_MIXED);
 
   std::string snapshot_dir = DATA_DIRECTORY + "pop_" + emp::to_string((int)GetUpdate());
   mkdir(snapshot_dir.c_str(), ACCESSPERMS);
@@ -1793,7 +1785,7 @@ void MapElitesSignalGPWorld::Snapshot_MAP(void) {
   }
 }
 
-/// Add a data file to track dominant program. Will track at same interval as fitness file. (only makes sense in context of EA run).
+/// Add a data file to track dominant program. Will track at same interval as fitness file. (only makes sense in context of non-MAPE run).
 emp::DataFile & MapElitesSignalGPWorld::AddDominantFile(const std::string & fpath="dominant.csv") {
   auto & file = SetupFile(fpath);
 
