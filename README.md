@@ -1,6 +1,6 @@
 # Exploring Genetic Programming Systems with Map-Elites
 
-## Treatments
+## Treatment Axes
 - Different problems:
   - Testcase problems
     - Fib. 
@@ -29,13 +29,13 @@
         - Changing Environment
           - Break environment into components
 
-## Points
+## Major Points
 - MAP-Elites illuminates representation space more than tournament (lexicase?) during evolution
 - What does random drift look like? 
 - Case study
   - Top-left, top-right, bottom-left, bottom-right solutions in figure => look, they're different!
 
-## Stats
+## Statistical Analyses
 - Spatial stats
   - Are these surfaces (aggregated maps) different? 
 
@@ -101,14 +101,5 @@
   - Tournament Map
   - MAPE Map
 
-## Stretch/future
+## Future Work
 - Run MAP-Elites over tournament/lexicase to keep track of where those algorithms have explored over all of evolutionary time. 
-
-## Action items
-- Look up original fitness function for 'smallest' benchmark
-  - Maybe change our fitness function?
-- Merge code base
-- SIGNALGP
-  - Implement lexicase
-- ScopeGP
-  - Implement lexicase
