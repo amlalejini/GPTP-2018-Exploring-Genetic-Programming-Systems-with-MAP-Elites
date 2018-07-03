@@ -3,10 +3,10 @@
 //  Released under the MIT Software license; see doc/LICENSE
 
 #include "web/web.h"
-#include "../map_elites_gp.h"
+#include "../MapElitesScopeGP_World.h"
 
 namespace UI = emp::web;
-MEGPConfig config;
+MapElitesGPConfig config;
 
 UI::Document world_display("emp_base");
 UI::Document program_info("program_info");
@@ -24,7 +24,7 @@ UI::Canvas canvas;
 const double world_width = 800;
 const double world_height = 800;
 
-MapElitesGPWorld world;
+MapElitesScopeGPWorld world;
 
 void DrawWorldCanvas() {
   // UI::Canvas canvas = doc.Canvas("world_canvas");
@@ -76,8 +76,10 @@ void ExecuteProgram(emp::AvidaGP & org) {
   program_exec.SetAttr("class", "card-body visible");
   program_exec << "<h3 class='card-title'>Program execution</h3>";
   std::stringstream ss;
+  std::stringstream temp_ss;
   ss << "</h5> <p class='card-text'>";
-  org.PrintStateHTML(ss);
+  org.PrintState(temp_ss);
+  ss << emp::text2html(temp_ss.str());
   ss << "</p>";
   program_exec << ss.str();
   program_exec << UI::Button( [&org](){ org.SingleProcess(); ExecuteProgram(org); }, "Step", "step_button").SetAttr("class", "btn btn-primary");
@@ -104,12 +106,14 @@ void CanvasClick(int x, int y) {
   std::cout << "x: " << x << " y: " << y << "world_x: " << world_x << " world_y: " << world_y << " canvas_x: " << canvas_x <<" canvas_y: " << canvas_y  << " px: " << px <<  " py: " << py <<" pos_x: " << pos_x << " pos_y: " << pos_y <<std::endl;
   size_t org_id = pos_y * world_x + pos_x;
   std::stringstream ss;
+  std::stringstream temp_ss;
   if (world.CalcFitnessID(org_id) > 0.0) {
     double entropy = world.inst_ent_fun(world.GetOrg(org_id));
     int scope_count = world.scope_count_fun(world.GetOrg(org_id));
     ss << "<h3 class='card-title'>Program information</h3>";
     ss << "<h5 class='card-subtitle mb-2 '>Fitness: " << world.CalcFitnessID(org_id)/1000.0 << " Scopes: " << scope_count << " Entropy: " << entropy << "</h5> <p class='card-text'>";
-    world[org_id].PrintGenomeHTML(ss);
+    world[org_id].PrintGenome(temp_ss);
+    ss << emp::text2html(temp_ss.str());
 
     // program_info << UI::Text() << ss.str();
     program_info << ss.str();
@@ -138,17 +142,17 @@ int main()
 
   program_exec.SetAttr("class", "card-body invisible");
 
-  problem.SetOption("Square", [](){config.PROBLEM("configs/testcases/examples-squares.csv"); world.Setup(config);DrawWorldCanvas();});
-  problem.SetOption("Count odds", [](){config.PROBLEM("configs/testcases/count-odds.csv"); world.Setup(config);DrawWorldCanvas();});
+  problem.SetOption("Square", [](){config.TESTCASES_FPATH("../configs/testcases/examples-squares.csv"); world.Setup(config);DrawWorldCanvas();});
+  problem.SetOption("Count odds", [](){config.TESTCASES_FPATH("../configs/testcases/count-odds.csv"); world.Setup(config);DrawWorldCanvas();});
 
-  n_test_cases.SetCallback([](const std::string & curr){config.N_TEST_CASES(emp::from_string<int>(curr)); world.Setup(config);DrawWorldCanvas();});
-  genome_size.SetCallback([](const std::string & curr){config.GENOME_SIZE(emp::from_string<int>(curr)); world.Setup(config);DrawWorldCanvas();});
-  inst_mut_rate.SetCallback([](const std::string & curr){config.INST_MUT_RATE(emp::from_string<double>(curr)); world.Setup(config);DrawWorldCanvas();});
-  arg_mut_rate.SetCallback([](const std::string & curr){config.ARG_MUT_RATE(emp::from_string<double>(curr)); world.Setup(config);DrawWorldCanvas();});
+  n_test_cases.SetCallback([](const std::string & curr){config.NUM_TEST_CASES(emp::from_string<int>(curr)); world.Setup(config);DrawWorldCanvas();});
+  // genome_size.SetCallback([](const std::string & curr){config.GENOME_SIZE(emp::from_string<int>(curr)); world.Setup(config);DrawWorldCanvas();});
+  inst_mut_rate.SetCallback([](const std::string & curr){config.INST_SUB__PER_INST(emp::from_string<double>(curr)); world.Setup(config);DrawWorldCanvas();});
+  arg_mut_rate.SetCallback([](const std::string & curr){config.ARG_SUB__PER_ARG(emp::from_string<double>(curr)); world.Setup(config);DrawWorldCanvas();});
 
   settings << "Problem: " << problem << "<br>";
   settings << "Number of test cases: " << n_test_cases << "<br>";
-  settings << "Genome length: " << genome_size << "<br>";
+  // settings << "Genome length: " << genome_size << "<br>";
   settings << "Instruction mutation rate: " << inst_mut_rate << "<br>";
   settings << "Argument mutation rate: " << arg_mut_rate << "<br>";
 
