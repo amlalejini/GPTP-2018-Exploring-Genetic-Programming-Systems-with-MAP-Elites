@@ -3,7 +3,7 @@ set freq_email Crash
 set description ScopeGPMAPE
 set mem_request 4
 set walltime 4
-set config_dir /mnt/scratch/dolsonem/gptp2018_mape_signalgp/configs
+set config_dir /mnt/scratch/dolsonem/gptp2018_mape_signalgp/experiment/configs
 set dest_dir /mnt/scratch/dolsonem/gptp2018_mape_signalgp/data
 
 # Treatments:
