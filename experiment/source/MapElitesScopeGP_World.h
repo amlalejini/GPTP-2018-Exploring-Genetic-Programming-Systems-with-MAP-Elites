@@ -282,7 +282,7 @@ public:
         {
             if (pop[i]) {
                 prog_ofstream << "===\n";
-                prog_ofstream << "id: " << i << ", scope_bin: " << scope_count_bin(pop[i]) << ", inst_ent_bin: " << inst_ent_bin(pop[i]) << ", fitness: " << goal_function(*pop[i]) << std::endl;
+                prog_ofstream << "id: " << i << ", scope_bin: " << scope_count_bin(i) << ", inst_ent_bin: " << inst_ent_bin(i) << ", fitness: " << goal_function(*pop[i]) << std::endl;
                 pop[i]->PrintGenome(prog_ofstream);
             }
         }
