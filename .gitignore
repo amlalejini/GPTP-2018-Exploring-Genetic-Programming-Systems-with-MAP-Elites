@@ -31,3 +31,6 @@
 *.out
 *.app
 MAPE_EXP
+pop_*
+*.csv
+traits.dat

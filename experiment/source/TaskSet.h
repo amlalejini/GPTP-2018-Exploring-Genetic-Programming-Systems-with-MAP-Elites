@@ -98,8 +98,8 @@ public:
   size_t GetTotalTasksCredited() const { return total_tasks_credited; }
   size_t GetTotalTasksCompleted() const { return total_tasks_completed; }
   size_t GetTotalTasksWasted() const { return total_tasks_wasted; }
-  size_t GetAllTasksCompletedTime() const { return time_all_tasks_credited; }
-  size_t GetAllTasksCreditedTime() const { return time_all_tasks_completed; }
+  size_t GetAllTasksCompletedTime() const { return time_all_tasks_completed; }
+  size_t GetAllTasksCreditedTime() const { return time_all_tasks_credited; }
   bool AllTasksCredited() const { return all_tasks_credited; }
   bool AllTasksCompleted() const { return all_tasks_completed; }
 
