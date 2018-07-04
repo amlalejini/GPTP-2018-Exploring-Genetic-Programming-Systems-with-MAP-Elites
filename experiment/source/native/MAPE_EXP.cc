@@ -13,9 +13,11 @@ enum class REPRESENTATION_TYPE {SignalGP=0, ScopeGP=1};
 
 int main(int argc, char* argv[])
 {
+  std::string config_fname = "MapElitesGPConfig.cfg";
   MapElitesGPConfig config;
+  config.Read(config_fname);
   auto args = emp::cl::ArgManager(argc, argv);
-  if (args.ProcessConfigOptions(config, std::cout, "MapElitesGPConfig.cfg", "MapElitesGP-macros.h") == false) exit(0);
+  if (args.ProcessConfigOptions(config, std::cout, config_fname, "MapElitesGP-macros.h") == false) exit(0);
   if (args.TestUnknown() == false) exit(0);  // If there are leftover args, throw an error.
   emp::Random rnd(config.RANDOM_SEED());
   
