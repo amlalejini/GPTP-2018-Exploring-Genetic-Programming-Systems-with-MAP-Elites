@@ -280,7 +280,7 @@ public:
         std::ofstream prog_ofstream(snapshot_dir + "/pop_" + emp::to_string((int)update) + ".pop");
         for (size_t i : GetValidOrgIDs())
         {
-            if (i) {
+            if (pop[i]) {
                 prog_ofstream << "===\n";
                 prog_ofstream << "id: " << i << ", scope_bin: " << scope_count_bin(pop[i]) << ", inst_ent_bin: " << inst_ent_bin(pop[i]) << ", fitness: " << goal_function(*pop[i]) << std::endl;
                 pop[i]->PrintGenome(prog_ofstream);
