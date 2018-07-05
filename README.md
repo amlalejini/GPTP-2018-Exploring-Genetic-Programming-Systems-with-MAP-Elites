@@ -6,7 +6,7 @@
   - Testcase problems
     - Squares
     - Sum
-    - Kolatz
+    - Colatz
     - Sym. Regression
     - Smallest
   - Logic '10'
@@ -32,14 +32,14 @@
 ## Major Points
 
 - MAP-Elites illuminates representation space more than tournament (lexicase?) during evolution
-- What does random drift look like? 
+- What does random drift look like?
 - Case study
   - Top-left, top-right, bottom-left, bottom-right solutions in figure => look, they're different!
 
 ## Statistical Analyses
 
 - Spatial stats
-  - Are these surfaces (aggregated maps) different? 
+  - Are these surfaces (aggregated maps) different?
 
 ## Parameters
 
@@ -111,4 +111,4 @@
 
 ## Future Work
 
-- Run MAP-Elites over tournament/lexicase to keep track of where those algorithms have explored over all of evolutionary time.
+- Run MAP-Elites over tournament/lexicase to keep track of where those algorithms have explored over   all of evolutionary time.
