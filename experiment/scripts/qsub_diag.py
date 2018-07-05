@@ -43,6 +43,10 @@ def DefaultCheckRunDone(run_list_fpath, dstr):
         if dstr in line: return True
     return False
 
+def ModuleCheckRunDone(run_list_fpath, mstr):
+    exec("from {} import CheckRunDone".format(mstr))
+    return CheckRunDone(run_list_fpath)
+
 def main():
     parser = argparse.ArgumentParser(description="dist_qsub diagnostics tool")
     parser.add_argument("run_list", type=str, help="Run list for runs we're diagnosing.")
@@ -56,7 +60,7 @@ def main():
     # Build CheckRunDone function: either load function from specified python module or use specified done_str argument.
     if (args.done_py != None):
         module_name = args.done_py.strip(".py")
-        exec("from {} import CheckRunDone".format(module_name))
+        CheckRunDone = lambda r : ModuleCheckRunDone(r, module_name)
     elif (args.done_str != None):
         done_str = args.done_str
         CheckRunDone = lambda r : DefaultCheckRunDone(r, done_str)
@@ -145,6 +149,8 @@ def main():
                 finished_dropped.append(run)
             else:
                 finished_tracked.append(run)
+            continue
+        
         # The run isn't *actually* finished and it's not missing. 
         # - The run must either still be running (managed by dist_qsub)
         # - Or, the run must have been dropped before finishing. 
