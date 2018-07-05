@@ -44,7 +44,7 @@ def DefaultCheckRunDone(run_list_fpath, dstr):
     return False
 
 def ModuleCheckRunDone(run_list_fpath, mstr):
-    exec("from {} import CheckRunDone".format(mstr))
+    exec("from {} import CheckRunDone".format(mstr), globals())
     return CheckRunDone(run_list_fpath)
 
 def main():
