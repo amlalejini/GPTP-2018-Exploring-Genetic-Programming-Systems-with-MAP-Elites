@@ -46,7 +46,7 @@ def main():
 
     # Build CheckRunDone function: either load function from specified python module or use specified done_str argument.
     if (args.done_py != None):
-        module_name = args.done_py
+        module_name = args.done_py.strip(".py")
         exec("import {}".format(module_name))
         exec("CheckRunDone = {}.CheckRunDone".format(module_name))
     elif (args.done_str != None):
@@ -111,7 +111,7 @@ def main():
     finished_tracking_runs = []
     for array in rl_arrays:
         qsub_done_arrayjobs_fpath = os.path.join(qsubs_dir, array + ".qsub_done_arrayjobs.txt")
-        if (not os.path.isdir(qsub_done_arrayjobs_fpath)): exit("Could not find '{}'. Exiting...".format(qsub_done_arrayjobs_fpath))
+        if (not os.path.isfile(qsub_done_arrayjobs_fpath)): exit("Could not find '{}'. Exiting...".format(qsub_done_arrayjobs_fpath))
         
         runs_name = "_".join(array.split("_")[:-1])
         runs_range = list(map(int,array.split("_")[-1].split("..")))
