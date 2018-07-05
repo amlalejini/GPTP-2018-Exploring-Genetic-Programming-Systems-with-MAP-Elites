@@ -48,7 +48,7 @@ def main():
     if (args.done_py != None):
         module_name = args.done_py
         exec("import {}".format(module_name))
-        exec("CheckRunDone = {}.CheckRunDone")
+        exec("CheckRunDone = {}.CheckRunDone".format(module_name))
     elif (args.done_str != None):
         done_str = args.done_str
         def CheckRunDone(run_list_fpath):
