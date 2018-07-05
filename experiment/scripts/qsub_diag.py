@@ -97,7 +97,7 @@ def main():
             rl_runs += ["{}_{}".format(runs_name, i) for i in range(runs_range[0], runs_range[1]+1)]
             rl_arrays.append("{}_{}".format(runs_name, bits[0]))
     
-    run_settings_out = "\n".join(["{} = {}".format(key, rl_settings[key]) for key in rl_settings])
+    run_settings_out = "\n".join(["  - {} = {}".format(key, rl_settings[key]) for key in rl_settings])
     expected_runs_out = "\n".join([run for run in rl_runs])
 
     print("Run list settings: \n{}".format(run_settings_out))
