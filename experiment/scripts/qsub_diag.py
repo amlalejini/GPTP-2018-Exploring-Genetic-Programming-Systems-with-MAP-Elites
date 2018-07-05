@@ -34,6 +34,15 @@ import argparse, os, copy
 # def DefaultCheckRunDone(run_fpath):
 #     return False
 
+def DefaultCheckRunDone(run_list_fpath, dstr):
+    run_log = None
+    with open(os.path.join(run_list_fpath, "run.log"), "r") as fp:
+        run_log = fp.read().split("\n")
+    for line in run_log:
+        line = line.strip()
+        if dstr in line: return True
+    return False
+
 def main():
     parser = argparse.ArgumentParser(description="dist_qsub diagnostics tool")
     parser.add_argument("run_list", type=str, help="Run list for runs we're diagnosing.")
@@ -47,18 +56,10 @@ def main():
     # Build CheckRunDone function: either load function from specified python module or use specified done_str argument.
     if (args.done_py != None):
         module_name = args.done_py.strip(".py")
-        exec("import {}".format(module_name))
-        exec("CheckRunDone = {}.CheckRunDone".format(module_name))
+        exec("from {} import CheckRunDone".format(module_name))
     elif (args.done_str != None):
         done_str = args.done_str
-        def CheckRunDone(run_list_fpath):
-            run_log = None
-            with open(os.path.join(run_list_fpath, "run.log"), "r") as fp:
-                run_log = fp.read().split("\n")
-            for line in run_log:
-                line = line.strip()
-                if done_str in line: return True
-            return False
+        CheckRunDone = lambda r : DefaultCheckRunDone(r, done_str)
     else:
         exit("No method for determining whether or not a run is finished was provided (-done_str, or -done_py). Exiting...")
 
