@@ -119,7 +119,8 @@ def main():
         # Load list of runs in this array that dist_qsub claims are done.
         done_arrayjobs_content = None
         with open(qsub_done_arrayjobs_fpath, "r") as fp:
-            done_arrayjobs_content = fp.read().split("\n")
+            done_arrayjobs_content = fp.read().strip().split("\n")
+
         finished_tracking_runs += ["{}_{}".format(runs_name, int(i.strip()) + runs_range[0]) for i in done_arrayjobs_content]
 
     print("Runs that dist_qsub is finished tracking:\n{}".format(str(finished_tracking_runs)))
