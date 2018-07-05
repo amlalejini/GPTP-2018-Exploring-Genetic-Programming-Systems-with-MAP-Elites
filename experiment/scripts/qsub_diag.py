@@ -101,7 +101,7 @@ def main():
     expected_runs_out = "\n".join([run for run in rl_runs])
 
     print("Run list settings: \n{}".format(run_settings_out))
-    print("Expected runs: \n{}".format(expected_runs_out))
+    # print("Expected runs: \n{}".format(expected_runs_out))
 
     # We need the destination directory.
     if (not "dest_dir" in rl_settings): exit("No 'dest_dir' setting specified in run_list file. Exiting...")
@@ -128,7 +128,7 @@ def main():
 
         finished_tracking_runs += ["{}_{}".format(runs_name, int(i.strip()) + runs_range[0]) for i in done_arrayjobs_content]
 
-    print("Runs that dist_qsub is finished tracking:\n{}".format(str(finished_tracking_runs)))
+    # print("Runs that dist_qsub is finished tracking:\n{}".format(str(finished_tracking_runs)))
     
     # Classify runs:
     missing_runs = []       # - Not found (no run directory found in destination). NOTE: This is bad.
@@ -168,19 +168,24 @@ def main():
     accounted_runs = sum(list(map(len, [missing_runs, finished_dropped, finished_tracked, unfinished_dropped, unfinished_tracked])))
     print("Total runs: {}\nTotal runs accounted for: {}".format(len(rl_runs), accounted_runs))
     
+    print ("Missing runs cnt = {}".format(len(missing_runs)))
     with open("MISSING.diag", "w") as fp:
         fp.write("\n".join(missing_runs))
     
+    print ("Finished runs cnt = {}".format(len(finished_dropped)))
     with open("FINISHED.diag", "w") as fp:
         fp.write("\n".join(finished_dropped))
     
     if (len(finished_tracked)):
+        print ("Finished (still) tracked runs cnt = {}".format(len(finished_tracked)))
         with open("FINISHED_TRACKED.diag", "w") as fp:
             fp.write("\n".join(finished_tracked))
 
+    print ("Unfinished dropped runs cnt = {}".format(len(unfinished_dropped)))
     with open("UNFINISHED_DROPPED.diag", "w") as fp:
         fp.write("\n".join(unfinished_dropped))
     
+    print ("Unfinished tracked runs cnt = {}".format(len(unfinished_tracked)))
     with open("UNFINISHED_TRACKED.diag", "w") as fp:
         fp.write("\n".join(unfinished_tracked))
         
