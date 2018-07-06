@@ -2,6 +2,7 @@
 qsub_diag.py
 
 This script can be used as a tool to diagnose dist_qsub runs:
+- What's missing completely?
 - What's finished?
 - What's not finished?
 - What's not finished but also no longer managed by dist_qsub?
@@ -21,10 +22,17 @@ NOTES:
     - [RUN_NAME]_[RUN_RANGE].qsub_successor_jobs.txt
         - JobIDs
 
-Goals:
-- For checking if a run is finished:
-    - Specify line content to look for in run.log
-    - Specify python module that has a CheckRunDone(run_path) call
+PATCHING:
+- If all runs in an array are dead and finished:
+    - That's good! This array has successfully finished!
+- If all runs in an array are dead and some are still unfinished:
+    - Ugh. We need to remove all unfinished jobs from associated done_arrayjobs.txt file, 
+      and qsub the associated .qsub_done file. 
+- If NOT all runs in an array are dead and some are unfinished (but no longer being tracked by dist qsub):
+    - Not as ugh as above. We just need to remove all unfinished jobs from the associated done_arrayjobs.txt file. 
+      distqsub should handle the rest on its own. 
+- If NOT all runs in an array are dead and some are unfinished (but still being tracked):
+    - This is fine. Things are still chugging along. 
 
 
 """
@@ -52,6 +60,7 @@ def main():
     parser.add_argument("run_list", type=str, help="Run list for runs we're diagnosing.")
     parser.add_argument("-done_str", type=str, help="The presence of this string in a line of a run's 'run.log' file indicates that the run has finished.")
     parser.add_argument("-done_py", type=str, help="Python module that contains a 'CheckRunDone(run_fpath)' function that returns true/false depending on if the specified run is finished. This argument takes precedence over the 'done_str' argument. NOTE: This module must be located where this script is executed.")
+    parser.add_argument("-patch", "-P", action="store_true", help="Patch run holes (unfinished jobs that are no longer tracked by dist_qsub) by tinkering with dist_qsub's job tracking files.")
 
     args = parser.parse_args()
 
@@ -78,8 +87,9 @@ def main():
 
     # Extract destination directory and a list of runs we should expect to see in that directory. 
     rl_runs = []
-    rl_arrays = []
+    # rl_arrays = []
     rl_settings = {}
+    array_info = {}
     for line in run_list_lines:
         # First, cleanup line
         if line.find("#") > -1: line = line[:line.find("#")]
@@ -95,10 +105,12 @@ def main():
             runs_range = list(map(int,bits[0].split("..")))
             runs_name = bits[1]
             rl_runs += ["{}_{}".format(runs_name, i) for i in range(runs_range[0], runs_range[1]+1)]
-            rl_arrays.append("{}_{}".format(runs_name, bits[0]))
+            array_info["{}_{}".format(runs_name, bits[0])] = {"name": runs_name, "range": runs_range, "all_runs": rl_runs}
+            
+            # rl_arrays.append("{}_{}".format(runs_name, bits[0]))
     
     run_settings_out = "\n".join(["  - {} = {}".format(key, rl_settings[key]) for key in rl_settings])
-    expected_runs_out = "\n".join([run for run in rl_runs])
+    # expected_runs_out = "\n".join([run for run in rl_runs])
 
     print("Run list settings: \n{}".format(run_settings_out))
     # print("Expected runs: \n{}".format(expected_runs_out))
@@ -114,21 +126,20 @@ def main():
 
     # Find the runs that dist_qsub is finished tracking.
     finished_tracking_runs = []
-    for array in rl_arrays:
+    for array in array_info:
         qsub_done_arrayjobs_fpath = os.path.join(qsubs_dir, array + ".qsub_done_arrayjobs.txt")
         if (not os.path.isfile(qsub_done_arrayjobs_fpath)): exit("Could not find '{}'. Exiting...".format(qsub_done_arrayjobs_fpath))
         
-        runs_name = "_".join(array.split("_")[:-1])
-        runs_range = list(map(int,array.split("_")[-1].split("..")))
+        runs_name = array_info[array]["name"]
+        runs_range = array_info[array]["range"]
 
         # Load list of runs in this array that dist_qsub claims are done.
         done_arrayjobs_content = None
         with open(qsub_done_arrayjobs_fpath, "r") as fp:
             done_arrayjobs_content = fp.read().strip().split("\n")
 
-        finished_tracking_runs += ["{}_{}".format(runs_name, int(i.strip()) + runs_range[0]) for i in done_arrayjobs_content]
-
-    # print("Runs that dist_qsub is finished tracking:\n{}".format(str(finished_tracking_runs)))
+        array_info[array]["untracked_runs"] = ["{}_{}".format(runs_name, int(i.strip()) + runs_range[0]) for i in done_arrayjobs_content]
+        finished_tracking_runs += array_info[array]["untracked_runs"]
     
     # Classify runs:
     missing_runs = []       # - Not found (no run directory found in destination). NOTE: This is bad.
@@ -136,7 +147,6 @@ def main():
     finished_tracked = []   # - Done (CheckRunDone returns true) but not found in 'done_arrayjobs' file. NOTE: This is bad.
     unfinished_dropped = [] # - Not done & not tracked (by dist_qsub). NOTE: This is bad. 
     unfinished_tracked = [] # - Not done & tracked (by dist_qsub). NOTE: This is where unfinished jobs *should* get classified.
-    
     for run in rl_runs:
         # Is run where we expect it?
         run_path = os.path.join(dest_dir, run)
@@ -188,6 +198,69 @@ def main():
     print ("Unfinished tracked runs cnt = {}".format(len(unfinished_tracked)))
     with open("UNFINISHED_TRACKED.diag", "w") as fp:
         fp.write("\n".join(unfinished_tracked))
+
+    # Patch!
+    if (not args.patch): return
+    # For each unfinished & dropped run, we need to remove it from the qsub_done_arrayjobs.txt file. 
+    # For each job array:
+    #   - Is it still active? untracked_runs < all_runs
+    #   - Is it completely dead? untracked_run == all_runs
+    # array: {"unfinished_runs": [], "finished_runs": [], "all_runs": [], "range": [], "name": ""}
+    for array in array_info:
+        # Are there any runs that never finished?
+        array_info[array]["finished"] = [run for run in array_info[array]["all_runs"] if run in (finished_dropped or finished_tracked)]
+        successfully_finished = len(array_info[array]["finished"]) == len(array_info[array]["all_runs"])
+        # - If all runs for this array successfully finished, move along. 
+        if successfully_finished: continue
+        
+        # Collect all unfinished runs. 
+        array_info[array]["unfinished_tracked_runs"] = [run for run in array_info[array]["all_runs"] if run in unfinished_tracked]
+        array_info[array]["unfinished_untracked_runs"] = [run for run in array_info[array]["all_runs"] if run in unfinished_dropped]
+        
+        array_info[array]["unfinished_array_ids"] = []
+        for run in array_info[array]["unfinished_tracked_runs"] + array_info[array]["unfinished_untracked_runs"]:
+            run_id = run.split("_")[-1]
+            arr_id = run_id - array_info[array]["range"][0]
+            array_info[array]["unfinished_array_ids"].append(arr_id)
+
+        # Is this array still actively running?
+        active = len(array_info[array]["untracked_runs"]) < len(array_info[array]["all_runs"])
+        array_info["active"] = active
+
+        # Re-write done_arrayjobs.txt
+        # SEL_MAPE__PROB_COLLATZ_301..330.qsub_done_arrayjobs.txt
+        print("==== {} ====".format(array))
+        print(array_info[array])
+        print("\n\n")
+        with open("{}.qsub_done_arrayjobs.txt".format(array), "w") as fp:
+            fp.write("\n".join(array_info[array]["unfinished_array_ids"]))
+        
+        # Do we need to completely resubmit the qsub for this array?
+        # - If the array is still active, we don't.
+        if active: continue
+        # - If the array is dead, we do.
+        # Load original qsub. 
+        qsub_content = None
+        qsub_path = os.path.join(qsubs_dir, "{}.qsub_done".format(array))
+        with open(qsub_path, "r") as fp:
+            qsub_content = fp.read()
+        # Edit checkpoint recovery bit. 
+        qsub_content = qsub_content.replace("export CPR=0", "export CPR=1")
+        # Write out updated qsub. 
+        with open("{}.qsub_done".format(array), "w") as fp:
+            fp.write(qsub_content)
+        # Submit qsub file! 
+        # TODO
+        
+
+        
+        
+
+
+        
+    
+
+    
         
 if __name__ == "__main__":
     main()
