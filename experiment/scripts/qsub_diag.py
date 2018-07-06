@@ -37,7 +37,7 @@ PATCHING:
 
 """
 
-import argparse, os, copy
+import argparse, os, copy, subprocess
 
 # def DefaultCheckRunDone(run_fpath):
 #     return False
@@ -201,18 +201,22 @@ def main():
 
     # Patch!
     if (not args.patch): return
+    print ("\n=== PATCHING JOBS ===")
     # For each unfinished & dropped run, we need to remove it from the qsub_done_arrayjobs.txt file. 
     # For each job array:
     #   - Is it still active? untracked_runs < all_runs
     #   - Is it completely dead? untracked_run == all_runs
     # array: {"unfinished_runs": [], "finished_runs": [], "all_runs": [], "range": [], "name": ""}
     for array in array_info:
+        print("Patching {}...".format(array))
         # Are there any runs that never finished?
         array_info[array]["finished"] = [run for run in array_info[array]["all_runs"] if run in (finished_dropped or finished_tracked)]
         successfully_finished = len(array_info[array]["finished"]) == len(array_info[array]["all_runs"])
         # - If all runs for this array successfully finished, move along. 
-        if successfully_finished: continue
-        
+        if successfully_finished: 
+            print("  {} is completely finished!".format(array))
+            continue
+
         # Collect all unfinished runs. 
         array_info[array]["unfinished_tracked_runs"] = [run for run in array_info[array]["all_runs"] if run in unfinished_tracked]
         array_info[array]["unfinished_untracked_runs"] = [run for run in array_info[array]["all_runs"] if run in unfinished_dropped]
@@ -238,10 +242,10 @@ def main():
         # Re-write done_arrayjobs.txt 
         # - Fill it with array ids associated with jobs that are finished.
         # SEL_MAPE__PROB_COLLATZ_301..330.qsub_done_arrayjobs.txt
-        print("==== {} ====".format(array))
-        print(array_info[array])
-        print("\n\n")
-        with open("{}.qsub_done_arrayjobs.txt".format(array), "w") as fp:
+        # print("==== {} ====".format(array))
+        # print(array_info[array])
+        # print("\n\n")
+        with open(os.path.join(qsubs_dir, "{}.qsub_done_arrayjobs.txt".format(array)), "w") as fp:
             fp.write("\n".join(array_info[array]["finished_array_ids"]))
         
         # Do we need to completely resubmit the qsub for this array?
@@ -256,21 +260,12 @@ def main():
         # Edit checkpoint recovery bit. 
         qsub_content = qsub_content.replace("export CPR=0", "export CPR=1")
         # Write out updated qsub. 
-        with open("{}.qsub_done".format(array), "w") as fp:
+        with open(qsub_path, "w") as fp:
             fp.write(qsub_content)
+        
         # Submit qsub file! 
-        print("{} is completely dead but still not finished. Resubmitting associated qsub file...")
-        # TODO
-        
-
-        
-        
-
-
-        
-    
-
-    
+        print("  {} is completely dead but still not finished. Resubmitting associated qsub file...".format(array))
+        subprocess.run("qsub {}".format(qsub_path), shell=True)
         
 if __name__ == "__main__":
     main()
