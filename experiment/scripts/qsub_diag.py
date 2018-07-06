@@ -225,7 +225,7 @@ def main():
 
         # Is this array still actively running?
         active = len(array_info[array]["untracked_runs"]) < len(array_info[array]["all_runs"])
-        array_info["active"] = active
+        array_info[array]["active"] = active
 
         # Re-write done_arrayjobs.txt
         # SEL_MAPE__PROB_COLLATZ_301..330.qsub_done_arrayjobs.txt
