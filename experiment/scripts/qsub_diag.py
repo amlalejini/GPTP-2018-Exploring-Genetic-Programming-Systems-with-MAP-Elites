@@ -217,23 +217,32 @@ def main():
         array_info[array]["unfinished_tracked_runs"] = [run for run in array_info[array]["all_runs"] if run in unfinished_tracked]
         array_info[array]["unfinished_untracked_runs"] = [run for run in array_info[array]["all_runs"] if run in unfinished_dropped]
         
+        # Collect all unfinished array ids
         array_info[array]["unfinished_array_ids"] = []
         for run in array_info[array]["unfinished_tracked_runs"] + array_info[array]["unfinished_untracked_runs"]:
             run_id = run.split("_")[-1]
             arr_id = int(run_id) - array_info[array]["range"][0]
             array_info[array]["unfinished_array_ids"].append(str(arr_id))
 
+        # Collect all finished array ids
+        array_info[array]["finished_array_ids"] = []
+        for run in array_info[array]["finished"]:
+            run_id = run.split("_")[-1]
+            arr_id = int(run_id) - array_info[array]["range"][0]
+            array_info[array]["finished_array_ids"].append(str(arr_id))
+
         # Is this array still actively running?
         active = len(array_info[array]["untracked_runs"]) < len(array_info[array]["all_runs"])
         array_info[array]["active"] = active
 
-        # Re-write done_arrayjobs.txt
+        # Re-write done_arrayjobs.txt 
+        # - Fill it with array ids associated with jobs that are finished.
         # SEL_MAPE__PROB_COLLATZ_301..330.qsub_done_arrayjobs.txt
         print("==== {} ====".format(array))
         print(array_info[array])
         print("\n\n")
         with open("{}.qsub_done_arrayjobs.txt".format(array), "w") as fp:
-            fp.write("\n".join(array_info[array]["unfinished_array_ids"]))
+            fp.write("\n".join(array_info[array]["finished_array_ids"]))
         
         # Do we need to completely resubmit the qsub for this array?
         # - If the array is still active, we don't.
