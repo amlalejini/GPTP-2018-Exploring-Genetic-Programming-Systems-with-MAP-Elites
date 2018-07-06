@@ -138,7 +138,7 @@ def main():
         with open(qsub_done_arrayjobs_fpath, "r") as fp:
             done_arrayjobs_content = fp.read().strip().split("\n")
 
-        array_info[array]["untracked_runs"] = ["{}_{}".format(runs_name, int(i.strip()) + runs_range[0]) for i in done_arrayjobs_content]
+        array_info[array]["untracked_runs"] = ["{}_{}".format(runs_name, int(i.strip()) + runs_range[0]) for i in done_arrayjobs_content if i != ""]
         finished_tracking_runs += array_info[array]["untracked_runs"]
     
     # Classify runs:
