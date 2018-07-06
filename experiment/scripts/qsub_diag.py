@@ -259,6 +259,7 @@ def main():
         with open("{}.qsub_done".format(array), "w") as fp:
             fp.write(qsub_content)
         # Submit qsub file! 
+        print("{} is completely dead but still not finished. Resubmitting associated qsub file...")
         # TODO
         
 
