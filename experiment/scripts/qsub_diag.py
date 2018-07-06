@@ -220,7 +220,7 @@ def main():
         array_info[array]["unfinished_array_ids"] = []
         for run in array_info[array]["unfinished_tracked_runs"] + array_info[array]["unfinished_untracked_runs"]:
             run_id = run.split("_")[-1]
-            arr_id = run_id - array_info[array]["range"][0]
+            arr_id = int(run_id) - array_info[array]["range"][0]
             array_info[array]["unfinished_array_ids"].append(arr_id)
 
         # Is this array still actively running?
