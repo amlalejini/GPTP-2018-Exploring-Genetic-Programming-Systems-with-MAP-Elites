@@ -105,9 +105,9 @@ def main():
             runs_range = list(map(int,bits[0].split("..")))
             runs_name = bits[1]
             rl_runs += ["{}_{}".format(runs_name, i) for i in range(runs_range[0], runs_range[1]+1)]
-            array_info["{}_{}".format(runs_name, bits[0])] = {"name": runs_name, "range": runs_range, "all_runs": rl_runs}
+            array_info["{}_{}".format(runs_name, bits[0])] = {"name": runs_name, "range": runs_range, "all_runs": ["{}_{}".format(runs_name, i) for i in range(runs_range[0], runs_range[1]+1)]}
             
-            # rl_arrays.append("{}_{}".format(runs_name, bits[0]))
+            
     
     run_settings_out = "\n".join(["  - {} = {}".format(key, rl_settings[key]) for key in rl_settings])
     # expected_runs_out = "\n".join([run for run in rl_runs])
