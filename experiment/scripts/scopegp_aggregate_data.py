@@ -93,6 +93,7 @@ def main():
                 except:
                     print("Failed to properly trait data from line: {} \n  Skipping.".format(line))
                     continue
+                if (single_update and info["update"] != target_update): continue 
                 agg_content += ",".join([info[thing] for thing in agg_info]) + "\n"
         fname = "scopegp_trait_{}_data.csv".format(target_update) if (single_update) else "scopegp_trait_data.csv"
         with open(os.path.join(dump_dir, fname), "w") as fp:
