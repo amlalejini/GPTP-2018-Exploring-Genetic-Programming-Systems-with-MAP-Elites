@@ -61,7 +61,7 @@ def main():
             run_dir = os.path.join(data_directory, run)
             output_dir = os.path.join(run_dir, "output")
             run_id = run.split("_")[-1]
-            run_params = "_".join(run.split("_")[:-1])
+            # run_params = "_".join(run.split("_")[:-1])
             print("============ Run: "+run)
             run_info = {pair.split("_")[0]:pair.split("_")[1] for pair in run.split("__")}
             print(run_info)
@@ -75,6 +75,9 @@ def main():
                 pop_snapshot_fpath = os.path.join(output_dir, pop, "pop_{}.csv".format(update))
                 # Pull out population snapshot file info. 
                 file_content = None
+                if (not os.path.isfile(pop_snapshot_fpath)):
+                    print("Could not find population snapshot file: {}\n  Skipping.".format(pop_snapshot_fpath))
+                    continue
                 with open(pop_snapshot_fpath, "r") as fp: file_content = fp.readlines()
                 header = file_content[0].split(",")
                 header_lu = {header[i].strip():i for i in range(0, len(header))}
