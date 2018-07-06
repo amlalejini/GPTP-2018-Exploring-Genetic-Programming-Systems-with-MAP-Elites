@@ -221,7 +221,7 @@ def main():
         for run in array_info[array]["unfinished_tracked_runs"] + array_info[array]["unfinished_untracked_runs"]:
             run_id = run.split("_")[-1]
             arr_id = int(run_id) - array_info[array]["range"][0]
-            array_info[array]["unfinished_array_ids"].append(arr_id)
+            array_info[array]["unfinished_array_ids"].append(str(arr_id))
 
         # Is this array still actively running?
         active = len(array_info[array]["untracked_runs"]) < len(array_info[array]["all_runs"])
