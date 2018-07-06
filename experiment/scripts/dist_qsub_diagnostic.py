@@ -265,7 +265,7 @@ def main():
         
         # Submit qsub file! 
         print("  {} is completely dead but still not finished. Resubmitting associated qsub file...".format(array))
-        subprocess.run("qsub {}".format(qsub_path), shell=True)
+        subprocess.call("qsub {}".format(qsub_path), shell=True)
         
 if __name__ == "__main__":
     main()
