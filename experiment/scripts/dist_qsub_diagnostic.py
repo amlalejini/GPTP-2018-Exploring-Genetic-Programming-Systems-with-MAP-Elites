@@ -1,5 +1,5 @@
 """
-qsub_diag.py
+dist_qsub_diagnostic.py
 
 This script can be used as a tool to diagnose dist_qsub runs:
 - What's missing completely?
