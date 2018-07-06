@@ -79,16 +79,20 @@ def main():
             for line in file_content:
                 line = line.strip().split(",")
                 info = {}
-                info["run_id"] = run_id
-                info["agent_id"] = line[header_lu["id"]]
-                info["selection_method"] = run_info["SEL"]
-                info["problem"] = run_info["PROB"]
-                info["update"] = line[header_lu["update"]]
-                info["fitness"] = line[header_lu["fitness"]]
-                info["instruction_entropy"] = line[header_lu["instruction_entropy"]]
-                info["scope_count"] = line[header_lu["scope_count"]]
-                info["scope_count_bin"] = line[header_lu["scope_count_bin"]]
-                info["inst_ent_bin"] = line[header_lu["inst_ent_bin"]]
+                try:
+                    info["run_id"] = run_id
+                    info["agent_id"] = line[header_lu["id"]]
+                    info["selection_method"] = run_info["SEL"]
+                    info["problem"] = run_info["PROB"]
+                    info["update"] = line[header_lu["update"]]
+                    info["fitness"] = line[header_lu["fitness"]]
+                    info["instruction_entropy"] = line[header_lu["instruction_entropy"]]
+                    info["scope_count"] = line[header_lu["scope_count"]]
+                    info["scope_count_bin"] = line[header_lu["scope_count_bin"]]
+                    info["inst_ent_bin"] = line[header_lu["inst_ent_bin"]]
+                except:
+                    print("Failed to properly trait data from line: {} \n  Skipping.".format(line))
+                    continue
                 agg_content += ",".join([info[thing] for thing in agg_info]) + "\n"
         fname = "scopegp_trait_{}_data.csv".format(target_update) if (single_update) else "scopegp_trait_data.csv"
         with open(os.path.join(dump_dir, fname), "w") as fp:
