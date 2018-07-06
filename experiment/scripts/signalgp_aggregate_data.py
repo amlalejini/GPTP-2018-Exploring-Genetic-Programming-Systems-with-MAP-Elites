@@ -54,7 +54,7 @@ def main():
         # Data columns to pull from data files:
         # id,fitness,tag_sim_thresh,inst_cnt,inst_entropy,func_cnt,func_used,func_entered,func_entered_entropy,InstructionEntropy__bin,FunctionsUsed__bin
         # Get a list of all runs. 
-        runs = [d for d in os.listdir(data_directory) if "SEL_" in d and "PROB_" in d]
+        runs = [d for d in os.listdir(data_directory) if "SEL_" in d and "PROB_" in d and os.path.isdir(os.path.join(data_directory, d))]
         runs.sort()
         for run in runs:
             # Extract run information.
