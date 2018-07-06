@@ -84,7 +84,7 @@ def main():
                 file_content = file_content[1:]
                 # Pull out information for each agent in the data file.
                 for line in file_content:
-                    line = line.split(",")
+                    line = line.strip().split(",")
                     info = {}
                     info["run_id"] = run_id
                     info["agent_id"] = line[header_lu["id"]]
@@ -102,7 +102,7 @@ def main():
                     info["FunctionsUsed__bin"] = line[header_lu["FunctionsUsed__bin"]]
                     # Add all agent info to file (in the proper order).
                     agg_content += ",".join([info[thing] for thing in agg_info]) + "\n"
-        fname = "pop_{}_data.csv".format(target_update) if (single_update) else "pop_data.csv"
+        fname = "signalgp_pop_{}_data.csv".format(target_update) if (single_update) else "signalgp_pop_data.csv"
         with open(os.path.join(dump_dir, fname), "w") as fp:
             fp.write(agg_content)
                 
