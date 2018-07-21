@@ -34,7 +34,7 @@ def main():
     args = parser.parse_args()
     data_directory = args.data_directory
     dump_dir = args.dump_dir if (args.dump_dir != None) else aggregator_dump
-    target_update = args.update
+    target_update = str(args.update)
     single_update = target_update != None
     
     # Validate input.
