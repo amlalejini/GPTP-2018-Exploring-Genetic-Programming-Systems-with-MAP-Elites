@@ -1,0 +1,120 @@
+---
+title: "Statistics for Exploring Genetic Programming systems with MAP-Elites"
+author: "Emily Dolson and Alex Lalejini"
+date: "July 22, 2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+To be sure that MAP-Elites is helping us explore a meaningfully large portion of the range of possible programs we could evolve with a given representation, we want to show that the distribution of our metrics among solutions to the problem is different among different selection schemes. 
+
+First let's load in the data
+
+```{r}
+library(readr)
+library(dplyr)
+library(ggplot2)
+data <- read_csv("../data/scopegp_trait_50000_data.csv")
+data$problem <- as.factor(data$problem)
+data$selection_method <- as.factor(data$selection_method)
+
+# We're not including the symbolic regression problem (Dow) because nothing solved it
+data <- data %>% filter(problem!="SYMREG")
+data <- data %>% filter(problem!="COLLATZ")
+```
+
+Make sure we have all the data:
+
+```{r}
+de_dup <- data %>% distinct(run_id, .keep_all = TRUE)
+summary(de_dup)
+
+```
+
+Now let's see if the distributions are different using a Kolmogrov-Smirnov test
+
+```{r}
+
+single_problem <- function(df, prob, cutoff) {
+  lex <- data %>% filter(problem==prob, selection_method=="LEX", fitness>=cutoff)
+  mape <- data %>% filter(problem==prob, selection_method=="MAPE", fitness>=cutoff)
+  rand <- data %>% filter(problem==prob, selection_method=="RAND", fitness>=cutoff)
+  tourn <- data %>% filter(problem==prob, selection_method=="TOURN")
+  
+  if (length(mape$instruction_entropy) == 0) {
+    print("MAPE DID NOT SOLVE PROBLEM")
+    return()
+  }
+  
+  if (length(lex$instruction_entropy) > 0) {
+    print("MAPE vs. Lex isntruction entropy")
+    print(ks.test(mape$instruction_entropy, lex$instruction_entropy))
+    print("MAPE vs. Lex scope count")
+    print(ks.test(mape$scope_count, lex$scope_count))
+  } else {
+    print("Lexicase did not solve problem")
+  }
+  
+  if (length(rand$instruction_entropy) > 0) {
+    print("MAPE vs. Rand isntruction entropy")
+    print(ks.test(mape$instruction_entropy, rand$instruction_entropy))
+    print("MAPE vs. Rand scope count")
+    print(ks.test(mape$scope_count, rand$scope_count))
+  } else {
+    print("Random did not solve problem")
+  }
+  
+  if (length(tourn$instruction_entropy) > 0) {
+    print("MAPE vs. Tourn isntruction entropy")
+    print(ks.test(mape$instruction_entropy, tourn$instruction_entropy))
+    print("MAPE vs. Tourn scope count")
+    print(ks.test(mape$scope_count, tourn$scope_count))
+  } else {
+    print("Tournament did not solve problem")
+  }
+  
+}
+
+probs = c("LOGIC", "SQUARES", "SMALLEST", "SUM")
+min_fs = c(10, 10000, 200000, 200000)
+
+for (i in 1:length(probs)) {
+  print(probs[i])
+  single_problem(data, probs[i], min_fs[i])
+}
+
+
+```
+That was a lot of comparisons so we should do a bonferroni correction for multiple comparisons. Unfortunately, these p-values are so low that R is just reporting "0" if we try to probe deeper into that p < 2.2e-16. To perform our bonferroni correction, we will round our p-values up (which is safe to do because it only makes our test more conservative) to 2.2e-16 (0.00000000000000022). Because we performed 48 hypothesis tests, a Bonferroni correction would lower our original alpha value of .05 to .05/48 = .001. Thus, p-values must be less than this value for us to consider them significant. Since 0.00000000000000022 is well below .001, we can safely say that all non-map-elites distributions are significantly different from all map-elites distributions.
+
+Let's plot the distributions we were just comparing, as a sanity check:
+
+```{r}
+
+
+filtered_data = data.frame()
+for (i in 1:length(probs)) {
+  filtered_data <- rbind(filtered_data, data %>% filter(problem==probs[i], selection_method!="RAND", fitness>=min_fs[i]))
+  filtered_data <- rbind(filtered_data, data %>% filter(problem==probs[i], selection_method=="RAND"))
+}
+
+ggplot(filtered_data, aes(instruction_entropy, colour = selection_method)) +
+  geom_freqpoly(stat = "density") + theme_classic() + facet_wrap(~problem)
+
+ggplot(filtered_data, aes(scope_count, colour = selection_method)) +
+  geom_freqpoly(stat = "density") + theme_classic() + facet_wrap(~problem)
+
+
+```
+
+MAP-Elites is clearly exploring a wider range of program structures than the other selection schemes.
+
+Let's look at the fitness across those structures.
+
+```{r}
+ggplot(data=filtered_data, aes(x=scope_count_bin, y=inst_ent_bin, z=fitness)) + stat_summary_2d(binwidth = 1, fun = function(x) length(x)) + theme_classic() + facet_wrap(problem~selection_method) + scale_fill_gradient(trans="log10")
+
+```
