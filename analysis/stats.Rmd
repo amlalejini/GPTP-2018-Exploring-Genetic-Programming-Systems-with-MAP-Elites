@@ -21,7 +21,7 @@ To be sure that MAP-Elites is helping us explore a meaningfully large portion of
 
 First let's load in the data
 
-```{r}
+```{r, message=FALSE}
 library(readr)
 library(dplyr)
 library(ggplot2)
@@ -44,7 +44,7 @@ summary(de_dup)
 
 Now let's see if the distributions are different using a Kolmogrov-Smirnov test
 
-```{r}
+```{r, warning=FALSE}
 
 single_problem <- function(df, prob, cutoff) {
   lex <- data %>% filter(problem==prob, selection_method=="LEX", fitness>=cutoff)
@@ -58,7 +58,7 @@ single_problem <- function(df, prob, cutoff) {
   }
   
   if (length(lex$instruction_entropy) > 0) {
-    print("MAPE vs. Lex isntruction entropy")
+    print("MAPE vs. Lex instruction entropy")
     print(ks.test(mape$instruction_entropy, lex$instruction_entropy))
     print("MAPE vs. Lex scope count")
     print(ks.test(mape$scope_count, lex$scope_count))
@@ -67,7 +67,7 @@ single_problem <- function(df, prob, cutoff) {
   }
   
   if (length(rand$instruction_entropy) > 0) {
-    print("MAPE vs. Rand isntruction entropy")
+    print("MAPE vs. Rand instruction entropy")
     print(ks.test(mape$instruction_entropy, rand$instruction_entropy))
     print("MAPE vs. Rand scope count")
     print(ks.test(mape$scope_count, rand$scope_count))
@@ -76,7 +76,7 @@ single_problem <- function(df, prob, cutoff) {
   }
   
   if (length(tourn$instruction_entropy) > 0) {
-    print("MAPE vs. Tourn isntruction entropy")
+    print("MAPE vs. Tourn instruction entropy")
     print(ks.test(mape$instruction_entropy, tourn$instruction_entropy))
     print("MAPE vs. Tourn scope count")
     print(ks.test(mape$scope_count, tourn$scope_count))
@@ -112,19 +112,22 @@ for (i in 1:length(probs)) {
 }
 filtered_data$selection_method <- factor(filtered_data$selection_method, c("MAPE", "TOURN", "LEX", "RAND"))
 levels(filtered_data$selection_method) <- c("MAP-Elites", "Tournament", "Lexicase", "Random")
+levels(filtered_data$problem) <- c("Collatz", "Logic", "Smallest", "Squares", "Sum", "Symreg")
 
 ggplot(filtered_data, aes(instruction_entropy, colour = selection_method)) +
   geom_freqpoly(stat = "density") + theme_classic() + facet_wrap(~problem) +
   scale_x_continuous("Instruction entropy") + scale_y_continuous("Density") + scale_color_discrete("Selection method") +
-  theme(legend.position = "bottom", axis.title = element_text(size=14), panel.grid.major = element_blank(),
-         panel.grid.minor = element_blank())
+  theme(legend.position = "bottom", axis.title = element_text(size=18), panel.grid.major = element_blank(),
+        axis.text = element_text(size=14), strip.text = element_text(size=18), legend.text = element_text(size=14),
+         legend.title = element_text(size=14), panel.grid.minor = element_blank())
 ggsave("inst_ent_density.pdf", width = 8, height=8)
 
 ggplot(filtered_data, aes(scope_count, colour = selection_method)) +
   geom_freqpoly(stat = "density") + theme_classic() + facet_wrap(~problem) +
   scale_x_continuous("Scope count") + scale_y_continuous("Density") + scale_color_discrete("Selection method")+
-  theme(legend.position = "bottom", axis.title = element_text(size=14), panel.grid.major = element_blank(),
-         panel.grid.minor = element_blank())
+  theme(legend.position = "bottom", axis.title = element_text(size=18), panel.grid.major = element_blank(),
+        axis.text = element_text(size=14), strip.text = element_text(size=18), legend.text = element_text(size=14), 
+        legend.title = element_text(size=14), panel.grid.minor = element_blank())
 ggsave("scope_count_density.pdf", width = 8, height=8)
 
 
@@ -136,11 +139,13 @@ MAP-Elites is clearly exploring a wider range of program structures than the oth
 
 Let's look at how these two metrics relate to each other.
 
-```{r}
-ggplot(data=filtered_data, aes(x=scope_count_bin, y=inst_ent_bin, z=fitness)) + stat_summary_2d(binwidth = 1, fun = function(x) length(x)) + theme_classic() + facet_wrap(problem~selection_method) + scale_fill_gradient("Solution count", trans="log10") +
+```{r, fig.height=8}
+ggplot(data=filtered_data, aes(x=scope_count_bin, y=inst_ent_bin, z=fitness)) + stat_summary_2d(binwidth = 1, fun = function(x) length(x)) + theme_classic() + facet_grid(problem~selection_method) + scale_fill_gradient("Solution count", trans="log10") +
   scale_y_continuous("Instruction entropy", breaks=c(0,15), labels=c(0,4.7)) + scale_x_continuous("Scope count") +
-  theme(legend.position = "bottom", axis.title = element_text(size=14), panel.grid.major = element_blank(),
-         panel.grid.minor = element_blank(), strip.text = element_text(size=14))
-ggsave("heatmaps.pdf", width = 8, height=9)
+  theme(legend.position = "bottom", axis.title = element_text(size=18),
+        axis.text = element_text(size=14), strip.text = element_text(size=16), legend.text = element_text(size=10),
+         legend.title = element_text(size=14), panel.grid.major = element_blank(),
+         panel.grid.minor = element_blank())
+ggsave("heatmaps.pdf", width = 8, height=8)
 
 ```
