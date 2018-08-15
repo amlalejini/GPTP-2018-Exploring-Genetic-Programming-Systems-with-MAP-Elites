@@ -100,12 +100,22 @@ for (i in 1:length(probs)) {
   filtered_data <- rbind(filtered_data, data %>% filter(problem==probs[i], selection_method!="RAND", fitness>=min_fs[i]))
   filtered_data <- rbind(filtered_data, data %>% filter(problem==probs[i], selection_method=="RAND"))
 }
+filtered_data$selection_method <- factor(filtered_data$selection_method, c("MAPE", "TOURN", "LEX", "RAND"))
+levels(filtered_data$selection_method) <- c("MAP-Elites", "Tournament", "Lexicase", "Random")
 
 ggplot(filtered_data, aes(instruction_entropy, colour = selection_method)) +
-  geom_freqpoly(stat = "density") + theme_classic() + facet_wrap(~problem)
+  geom_freqpoly(stat = "density") + theme_classic() + facet_wrap(~problem) +
+  scale_x_continuous("Instruction entropy") + scale_y_continuous("Density") + scale_color_discrete("Selection method") +
+  theme(legend.position = "bottom", axis.title = element_text(size=14), panel.grid.major = element_blank(),
+         panel.grid.minor = element_blank())
+ggsave("inst_ent_density.pdf", width = 8, height=8)
 
 ggplot(filtered_data, aes(scope_count, colour = selection_method)) +
-  geom_freqpoly(stat = "density") + theme_classic() + facet_wrap(~problem)
+  geom_freqpoly(stat = "density") + theme_classic() + facet_wrap(~problem) +
+  scale_x_continuous("Scope count") + scale_y_continuous("Density") + scale_color_discrete("Selection method")+
+  theme(legend.position = "bottom", axis.title = element_text(size=14), panel.grid.major = element_blank(),
+         panel.grid.minor = element_blank())
+ggsave("scope_count_density.pdf", width = 8, height=8)
 
 
 ```
@@ -115,6 +125,10 @@ MAP-Elites is clearly exploring a wider range of program structures than the oth
 Let's look at the fitness across those structures.
 
 ```{r}
-ggplot(data=filtered_data, aes(x=scope_count_bin, y=inst_ent_bin, z=fitness)) + stat_summary_2d(binwidth = 1, fun = function(x) length(x)) + theme_classic() + facet_wrap(problem~selection_method) + scale_fill_gradient(trans="log10")
+ggplot(data=filtered_data, aes(x=scope_count_bin, y=inst_ent_bin, z=fitness)) + stat_summary_2d(binwidth = 1, fun = function(x) length(x)) + theme_classic() + facet_wrap(problem~selection_method) + scale_fill_gradient("Solution count", trans="log10") +
+  scale_y_continuous("Instruction entropy", breaks=c(0,15), labels=c(0,4.7)) + scale_x_continuous("Scope count") +
+  theme(legend.position = "bottom", axis.title = element_text(size=14), panel.grid.major = element_blank(),
+         panel.grid.minor = element_blank(), strip.text = element_text(size=14))
+ggsave("heatmaps.pdf", width = 8, height=9)
 
 ```
