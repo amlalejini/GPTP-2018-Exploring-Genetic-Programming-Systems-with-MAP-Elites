@@ -2,12 +2,20 @@
 title: "Statistics for Exploring Genetic Programming systems with MAP-Elites"
 author: "Emily Dolson and Alex Lalejini"
 date: "July 22, 2018"
-output: html_document
+output:
+ html_document:
+   toc: true
+   toc_float: true
+   collapsed: false
+   theme: default
+ pdf_document: default
 ---
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 ```
+
+# Significance tests
 
 To be sure that MAP-Elites is helping us explore a meaningfully large portion of the range of possible programs we could evolve with a given representation, we want to show that the distribution of our metrics among solutions to the problem is different among different selection schemes. 
 
@@ -90,6 +98,8 @@ for (i in 1:length(probs)) {
 ```
 That was a lot of comparisons so we should do a bonferroni correction for multiple comparisons. Unfortunately, these p-values are so low that R is just reporting "0" if we try to probe deeper into that p < 2.2e-16. To perform our bonferroni correction, we will round our p-values up (which is safe to do because it only makes our test more conservative) to 2.2e-16 (0.00000000000000022). Because we performed 48 hypothesis tests, a Bonferroni correction would lower our original alpha value of .05 to .05/48 = .001. Thus, p-values must be less than this value for us to consider them significant. Since 0.00000000000000022 is well below .001, we can safely say that all non-map-elites distributions are significantly different from all map-elites distributions.
 
+# Visually comparing univariate distributions
+
 Let's plot the distributions we were just comparing, as a sanity check:
 
 ```{r}
@@ -122,7 +132,9 @@ ggsave("scope_count_density.pdf", width = 8, height=8)
 
 MAP-Elites is clearly exploring a wider range of program structures than the other selection schemes.
 
-Let's look at the fitness across those structures.
+# Heat maps of relationships between scope count and instruction entropy
+
+Let's look at how these two metrics relate to each other.
 
 ```{r}
 ggplot(data=filtered_data, aes(x=scope_count_bin, y=inst_ent_bin, z=fitness)) + stat_summary_2d(binwidth = 1, fun = function(x) length(x)) + theme_classic() + facet_wrap(problem~selection_method) + scale_fill_gradient("Solution count", trans="log10") +
