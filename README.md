@@ -1,114 +1,64 @@
-# Exploring Genetic Programming Systems with Map-Elites
 
-## Treatment Axes
+[![DOI](https://zenodo.org/badge/136976599.svg)](https://zenodo.org/badge/latestdoi/136976599)
 
-- Different problems:
-  - Testcase problems
-    - Squares
-    - Sum
-    - Colatz
-    - Sym. Regression
-    - Smallest
-  - Logic '10'
-  - Changing Environment
-- Selection schemes
-  - Tournament
-  - MAP-Elites
-    - Axes: instruction entropy, module (scope/function) use
-  - Random select
-  - Lexicase
-    - Test cases
-      - Testcase problems
-        - Fib
-        - Squares
-        - Sum
-        - Kolatz
-        - Sym. Regression
-      - Logic '10'
-        - Each logic function
-      - Changing Environment
-        - Break environment into components
+## Navigation
 
-## Major Points
+- [Overview](#overview)
+  - [Repository guide](#repository-guide)
+  - [Authors](#contribution-authors)
+  - [Publication abstract](#abstract)
+- [Data and Analyses](#data-and-analyses)
 
-- MAP-Elites illuminates representation space more than tournament (lexicase?) during evolution
-- What does random drift look like?
-- Case study
-  - Top-left, top-right, bottom-left, bottom-right solutions in figure => look, they're different!
+## Overview
 
-## Statistical Analyses
+This repository is associated with our 2018 Genetic Programming Theory and Practice (GPTP) workshop contribution, citation pending.
 
-- Spatial stats
-  - Are these surfaces (aggregated maps) different?
+### Repository guide
 
-## Parameters
+- [analysis/](https://github.com/amlalejini/GPTP-2018-Exploring-Genetic-Programming-Systems-with-MAP-Elites/tree/master/analysis)
+  - This directory contains our fully detailed statistical analyses as well as the
+    code necessary to reproduce publication figures.
+- [data/](https://github.com/amlalejini/GPTP-2018-Exploring-Genetic-Programming-Systems-with-MAP-Elites/tree/master/data)
+  - This directory contains the experiment data used by our analyses.
+- [experiment/](https://github.com/amlalejini/GPTP-2018-Exploring-Genetic-Programming-Systems-with-MAP-Elites/tree/master/experiment)
+  - This directory contains the source code (C++) for all experiments as well as
+    a few utility scripts (Python).
 
-### Shared
+### Contribution Authors
 
-- Population size = 1000
-- Generations = 100k
-- Population initialization: Random population initialization
-- Clear the cache every generation
-- Evaluation time
-  - Problem:
-    - Fib. = 512
-    - Squares = 128
-    - Sum = 512
-    - Smallest = 512
-    - Colatz = 512
-    - Sym. Regression = 512
-    - Logic '10' = 128
-    - Changing Environment = 256
-- Tournament size = 2
-- MAPE - Inst. entropy bin count = 20
-- Number of test cases:
-  - Squares = 10
-  - Everything else = 200
-- Program constraints
-  - Max total length 1024
-- Mutation rate
-  - Arg sub - 0.005
-  - Inst sub - 0.005
-  - Inst ins - 0.005
-  - Inst del - 0.005
-- Instruction set
-  - Dereference instruction
-  - Testcases
-    - SubResult
-  - Logic
-    - Nand
-    - Submit
+- [Emily Dolson](http://emilyldolson.com)
+- [Alexander Lalejini](http://lalejini.com)
+- [Charles Ofria](http://ofria.com)
 
-### SignalGP
+### Abstract
 
-- Program constraints
-  - 32 functions
-- Mutations
-  - No slip
-  - Func dup/del = 0.05
+> MAP-Elites is an evolutionary computation technique that has proven valuable for
+> exploring and illuminating the genotype-phenotype space of a computational problem.
+> In MAP-Elites, a population is structured based on phenotypic traits of prospective
+> solutions; each cell represents a distinct combination of traits and maintains only
+> the most fit organism found with those traits.  The resulting map of trait combinations
+> to fitness allows the user to develop a better understanding of how each trait relates
+> to fitness and how they interact with each other.  While MAP-Elites has not been 
+> demonstrated to be competitive for identifying the optimal Pareto front, the insights
+> it provide do allow the users to better understand the underlying problem.  
+> Such insights extend into the underlying structure of the problem representations, 
+> such as the value of connection cost or modularity to evolving neural networks.  
+> Here, we extend the use of MAP-Elites to examine genetic programming representations, 
+> using aspects of program architecture as traits to explore.  We further discuss 
+> how this approach can promote more complex and efficient solutions.
 
-### ScopeGP
+## Computational Substrate
 
-- Program constraints
-  - (?)17 scopes
+In this work, we evolved simple linear genetic programs.
+See the publication for a fully detailed description of the linear GP representation
+used. 
 
-## Data tracking
+Details about the instruction set used in our experiments can be found...
 
-- Bin location
-  - inst entropy
-  - module used
-- Phenotype/genotype values
-  - Instruction entropy
-  - Module Used
-- Fitness
+## Data and Analyses
 
-### Figures
+The data used in our analyses can be found in this repository: [./data/](https://github.com/amlalejini/GPTP-2018-Exploring-Genetic-Programming-Systems-with-MAP-Elites/tree/master/data)
 
-- For each problem & representation:
-  - Drift Map
-  - Tournament Map
-  - MAPE Map
+[The fully detailed data analyses can be found **here**.](http://lalejini.com/GPTP-2018-Exploring-Genetic-Programming-Systems-with-MAP-Elites/analysis/stats.html)
 
-## Future Work
 
-- Run MAP-Elites over tournament/lexicase to keep track of where those algorithms have explored over   all of evolutionary time.
