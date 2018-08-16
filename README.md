@@ -24,6 +24,10 @@ This repository is associated with our 2018 Genetic Programming Theory and Pract
   - This directory contains the source code (C++) for all experiments as well as
     a few utility scripts (Python).
 
+### Dependencies
+
+This code depends on [Empirical](https://github.com/devosoft/Empirical). These specific experiments were run using the version in [this commit](https://github.com/amlalejini/Empirical/tree/38d6ab1a0f70d588385dc81f7d1885ee3bc87a97).
+
 ### Contribution Authors
 
 - [Emily Dolson](http://emilyldolson.com)
