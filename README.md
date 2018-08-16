@@ -32,20 +32,7 @@ This repository is associated with our 2018 Genetic Programming Theory and Pract
 
 ### Abstract
 
-> MAP-Elites is an evolutionary computation technique that has proven valuable for
-> exploring and illuminating the genotype-phenotype space of a computational problem.
-> In MAP-Elites, a population is structured based on phenotypic traits of prospective
-> solutions; each cell represents a distinct combination of traits and maintains only
-> the most fit organism found with those traits.  The resulting map of trait combinations
-> to fitness allows the user to develop a better understanding of how each trait relates
-> to fitness and how they interact with each other.  While MAP-Elites has not been 
-> demonstrated to be competitive for identifying the optimal Pareto front, the insights
-> it provide do allow the users to better understand the underlying problem.  
-> Such insights extend into the underlying structure of the problem representations, 
-> such as the value of connection cost or modularity to evolving neural networks.  
-> Here, we extend the use of MAP-Elites to examine genetic programming representations, 
-> using aspects of program architecture as traits to explore.  We further discuss 
-> how this approach can promote more complex and efficient solutions.
+> MAP-Elites is an evolutionary computation technique that has proven valuable for exploring and illuminating the genotype-phenotype space of a computational problem.  In MAP-Elites, a population is structured based on phenotypic traits of prospective solutions; each cell represents a distinct combination of traits and maintains only the most fit organism found with those traits.  The resulting map of trait combinations to fitness allows the user to develop a better understanding of how each trait relates to fitness and how they interact with each other.  While MAP-Elites has not been demonstrated to be competitive for identifying the optimal Pareto front, the insights it provide do allow the users to better understand the underlying problem.  Such insights extend into the underlying structure of the problem representations, such as the value of connection cost or modularity to evolving neural networks.  Here, we extend the use of MAP-Elites to examine genetic programming representations, using aspects of program architecture as traits to explore.  We further discuss how this approach can promote more complex and efficient solutions.
 
 ## Computational Substrate
 
@@ -53,7 +40,7 @@ In this work, we evolved simple linear genetic programs.
 See the publication for a fully detailed description of the linear GP representation
 used. 
 
-Details about the instruction set used in our experiments can be found...
+Details about the instruction set used in our experiments can be found [here](http://lalejini.com/GPTP-2018-Exploring-Genetic-Programming-Systems-with-MAP-Elites/documentation/instruction_set).
 
 ## Data and Analyses
 
