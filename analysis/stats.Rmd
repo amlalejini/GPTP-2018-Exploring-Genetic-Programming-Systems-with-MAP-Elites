@@ -25,6 +25,7 @@ First let's load in the data
 library(readr)
 library(dplyr)
 library(ggplot2)
+library(dgof)
 data <- read_csv("../data/scopegp_trait_50000_data.csv")
 data$problem <- as.factor(data$problem)
 data$selection_method <- as.factor(data$selection_method)
@@ -115,7 +116,7 @@ levels(filtered_data$selection_method) <- c("MAP-Elites", "Tournament", "Lexicas
 levels(filtered_data$problem) <- c("Collatz", "Logic", "Smallest", "Squares", "Sum", "Symreg")
 
 ggplot(filtered_data, aes(instruction_entropy, colour = selection_method)) +
-  geom_freqpoly(stat = "density") + theme_classic() + facet_wrap(~problem) +
+  geom_freqpoly(stat = "density", bw=.2) + theme_classic() + facet_wrap(~problem) +
   scale_x_continuous("Instruction entropy") + scale_y_continuous("Density") + scale_color_discrete("Selection method") +
   theme(legend.position = "bottom", axis.title = element_text(size=18), panel.grid.major = element_blank(),
         axis.text = element_text(size=14), strip.text = element_text(size=18), legend.text = element_text(size=14),
@@ -123,7 +124,7 @@ ggplot(filtered_data, aes(instruction_entropy, colour = selection_method)) +
 ggsave("inst_ent_density.pdf", width = 8, height=8)
 
 ggplot(filtered_data, aes(scope_count, colour = selection_method)) +
-  geom_freqpoly(stat = "density") + theme_classic() + facet_wrap(~problem) +
+  geom_freqpoly(stat="density", bw=.5)  + theme_classic() + facet_wrap(~problem) +
   scale_x_continuous("Scope count") + scale_y_continuous("Density") + scale_color_discrete("Selection method")+
   theme(legend.position = "bottom", axis.title = element_text(size=18), panel.grid.major = element_blank(),
         axis.text = element_text(size=14), strip.text = element_text(size=18), legend.text = element_text(size=14), 
